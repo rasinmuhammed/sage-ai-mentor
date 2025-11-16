@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useUser } from '@clerk/nextjs'
 import axios from 'axios'
-import { Github, Loader2, CheckCircle, AlertCircle, ExternalLink, ArrowRight } from 'lucide-react'
+import { Github, Loader2, CheckCircle, AlertCircle, ExternalLink, ArrowRight, Brain } from 'lucide-react'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
@@ -107,14 +107,14 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
       </div>
 
       <div className="max-w-2xl w-full relative z-10">
-        {/* Header */}
+        {/* Header - Brand Change: Sage -> Reflog */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center space-x-3 mb-4">
             <div className="bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 p-3 rounded-2xl shadow-lg">
-              <Github className="w-8 h-8 text-white" />
+              <Brain className="w-8 h-8 text-white" />
             </div>
             <h1 className="text-5xl font-bold bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
-              Sage
+              Reflog
             </h1>
           </div>
           <p className="text-xl text-gray-400">Your Brutally Honest AI Mentor</p>
@@ -280,7 +280,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
               </div>
 
               <h3 className="text-3xl font-bold text-white mb-3">
-                Welcome to Sage! 🎉
+                Welcome to Reflog! 🎉
               </h3>
               <p className="text-gray-400 mb-8">
                 Your profile has been analyzed. Brace yourself for some honest feedback.

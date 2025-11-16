@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, text # Import 'text'
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import QueuePool
@@ -11,7 +11,9 @@ load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 if not DATABASE_URL:
-    raise ValueError("DATABASE_URL is not set! Please add it to backend/.env")
+    # If DATABASE_URL is not set, default to local SQLite for development
+    DATABASE_URL = "sqlite:///./sage.db"
+    print("⚠️ WARNING: DATABASE_URL not set. Falling back to SQLite.")
 
 # Production-grade connection pooling
 engine = create_engine(
@@ -25,7 +27,7 @@ engine = create_engine(
     echo=False,  # Disable SQL logging in production
     connect_args={
         "connect_timeout": 10,
-        "options": "-c statement_timeout=30000"  # 30s query timeout
+        # REMOVED: "options": "-c statement_timeout=30000" as it is unsupported by Neon.tech connection pooler
     }
 )
 
@@ -36,12 +38,14 @@ logging.getLogger('sqlalchemy.pool').setLevel(logging.INFO)
 # Optimize PostgreSQL settings for each connection
 @event.listens_for(engine, "connect")
 def receive_connect(dbapi_conn, connection_record):
-    cursor = dbapi_conn.cursor()
-    # Set optimal work_mem for this connection
-    cursor.execute("SET work_mem = '64MB'")
-    # Enable JIT compilation for complex queries
-    cursor.execute("SET jit = on")
-    cursor.close()
+    # Only run for PostgreSQL connections
+    if engine.url.drivername.startswith("postgresql"):
+        cursor = dbapi_conn.cursor()
+        # Set optimal work_mem for this connection
+        cursor.execute("SET work_mem = '64MB'")
+        # Enable JIT compilation for complex queries
+        cursor.execute("SET jit = on")
+        cursor.close()
 
 SessionLocal = sessionmaker(
     autocommit=False, 
@@ -66,22 +70,22 @@ def init_db():
     # Create additional indexes for performance
     with engine.connect() as conn:
         # Index for checkins by user and timestamp
-        conn.execute("""
+        conn.execute(text("""
             CREATE INDEX IF NOT EXISTS idx_checkins_user_timestamp 
             ON checkins(user_id, timestamp DESC)
-        """)
+        """))
         
         # Index for goals by user and status
-        conn.execute("""
+        conn.execute(text("""
             CREATE INDEX IF NOT EXISTS idx_goals_user_status 
             ON goals(user_id, status)
-        """)
+        """))
         
         # Index for notifications by user and read status
-        conn.execute("""
+        conn.execute(text("""
             CREATE INDEX IF NOT EXISTS idx_notifications_user_read 
             ON notifications(user_id, read, created_at DESC)
-        """)
+        """))
         
         conn.commit()
     
@@ -92,7 +96,8 @@ def check_db_health():
     """Check database connection health"""
     try:
         with engine.connect() as conn:
-            conn.execute("SELECT 1")
+            # FIX: Use text() for simple SELECT queries as well
+            conn.execute(text("SELECT 1"))
         return True
     except Exception as e:
         logging.error(f"Database health check failed: {e}")

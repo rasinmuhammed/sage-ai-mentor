@@ -20,7 +20,7 @@ export default function SignUpPage() {
               <Brain className="w-8 h-8 text-white" />
             </div>
             <span className="text-3xl font-bold bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
-              Sage
+              Reflog
             </span>
           </Link>
 
@@ -51,8 +51,9 @@ export default function SignUpPage() {
           </div>
 
           <div className="mt-8 p-6 bg-gradient-to-br from-blue-500/10 to-purple-500/10 border border-blue-500/20 rounded-2xl">
+            {/* Brand Change: Sage -> Reflog in testimonial */}
             <p className="text-gray-300 italic">
-              "Finally, an AI that doesn't just validate my excuses. Sage called out my tutorial hell and I actually shipped my project."
+              "Finally, an AI that doesn't just validate my excuses. Reflog called out my tutorial hell and I actually shipped my project."
             </p>
             <p className="text-sm text-gray-500 mt-2">— Alex Chen, Full-stack Developer</p>
           </div>
@@ -60,13 +61,13 @@ export default function SignUpPage() {
 
         {/* Right Side - Sign Up Form */}
         <div className="w-full">
-          {/* Mobile Logo */}
+          {/* Mobile Logo - Brand Change: Sage -> Reflog */}
           <Link href="/" className="flex lg:hidden items-center justify-center space-x-3 mb-8">
             <div className="bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 p-3 rounded-2xl shadow-lg">
               <Brain className="w-8 h-8 text-white" />
             </div>
             <span className="text-3xl font-bold bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
-              Sage
+              Reflog
             </span>
           </Link>
 

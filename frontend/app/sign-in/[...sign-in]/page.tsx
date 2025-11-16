@@ -13,13 +13,13 @@ export default function SignInPage() {
 
       {/* Content */}
       <div className="relative z-10 w-full max-w-md">
-        {/* Logo */}
+        {/* Logo - Brand Change: Sage -> Reflog */}
         <Link href="/" className="flex items-center justify-center space-x-3 mb-8">
           <div className="bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 p-3 rounded-2xl shadow-lg">
             <Brain className="w-8 h-8 text-white" />
           </div>
           <span className="text-3xl font-bold bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
-            Sage
+            Reflog
           </span>
         </Link>
 

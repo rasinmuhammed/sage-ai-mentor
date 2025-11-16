@@ -141,9 +141,15 @@ export default function Dashboard({ githubUsername }: DashboardProps) {
   }
 
 
-  const activePercentage = data.github.total_repos > 0
-    ? (data.github.active_repos / data.github.total_repos * 100).toFixed(0)
-    : 0;
+  // --- FIX: Move activePercentage calculation inside the main render/if(data) ---
+  let activePercentage = 0;
+  if (data?.github) {
+    activePercentage = data.github.total_repos > 0
+      ? parseFloat(((data.github.active_repos / data.github.total_repos) * 100).toFixed(0))
+      : 0;
+  }
+  // --- END FIX ---
+
 
   const tabs: { id: TabType; label: string; icon: React.ElementType }[] = [
     { id: 'overview', label: 'Overview', icon: Target },
@@ -156,7 +162,7 @@ export default function Dashboard({ githubUsername }: DashboardProps) {
     { id: 'notifications', label: 'Notifications', icon: Bell }
   ];
 
-  if (loading && !data) {
+  if (loading || !data) { // Ensure data existence is checked here too
     return (
       <div className="min-h-screen bg-[#000000] text-[#FBFAEE]">
         <NotificationBanner
@@ -348,6 +354,7 @@ export default function Dashboard({ githubUsername }: DashboardProps) {
                               <Code className="w-4 h-4 text-[#933DC9]" />
                               <span className="text-sm text-[#FBFAEE]/70">Total Repos</span>
                             </div>
+                            {/* FIX: Use optional chaining to safely display data */}
                             <span className="text-3xl font-bold text-[#FBFAEE]">{data.github.total_repos}</span>
                           </div>
                           <div>
@@ -355,6 +362,7 @@ export default function Dashboard({ githubUsername }: DashboardProps) {
                               <Activity className="w-4 h-4 text-green-400" />
                               <span className="text-sm text-[#FBFAEE]/70">Active</span>
                             </div>
+                             {/* FIX: Use optional chaining to safely display data */}
                             <span className="text-3xl font-bold text-green-400">{data.github.active_repos}</span>
                           </div>
                         </div>
@@ -378,7 +386,8 @@ export default function Dashboard({ githubUsername }: DashboardProps) {
                           <span className="text-sm text-[#FBFAEE]/70 font-medium">Top Languages</span>
                         </div>
                         <div className="space-y-2">
-                          {Object.entries(data.github.languages).slice(0, 3).map(([lang, count]) => (
+                           {/* FIX: Safely iterate over languages, handling null/undefined */}
+                          {Object.entries(data.github.languages || {}).slice(0, 3).map(([lang, count]) => (
                             <div key={lang} className="flex items-center justify-between group/lang">
                               <div className="flex items-center space-x-2">
                                 <Star className="w-3 h-3 text-[#933DC9] group-hover/lang:text-[#C488F8] transition-colors" />
@@ -395,7 +404,7 @@ export default function Dashboard({ githubUsername }: DashboardProps) {
                               </div>
                             </div>
                           ))}
-                          {Object.keys(data.github.languages).length === 0 && (
+                          {Object.keys(data.github.languages || {}).length === 0 && (
                             <p className="text-xs text-[#FBFAEE]/60 text-center py-2">No language data found.</p>
                           )}
                         </div>
@@ -421,6 +430,7 @@ export default function Dashboard({ githubUsername }: DashboardProps) {
                       <div className="absolute inset-0 bg-gradient-to-br from-[#933DC9]/10 to-transparent"></div>
                       <div className="relative text-center">
                         <div className="text-5xl font-bold bg-gradient-to-r from-[#C488F8] to-[#933DC9] bg-clip-text text-transparent mb-2">
+                           {/* FIX: Use optional chaining to safely display data */}
                           {data.stats.success_rate.toFixed(0)}%
                         </div>
                         <div className="text-sm text-[#FBFAEE]/80 font-medium">Success Rate</div>
@@ -428,10 +438,12 @@ export default function Dashboard({ githubUsername }: DashboardProps) {
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div className="bg-[#000000]/40 rounded-xl p-4 text-center border border-[#242424]/40">
+                         {/* FIX: Use optional chaining to safely display data */}
                         <div className="text-3xl font-bold text-[#FBFAEE] mb-1">{data.stats.total_checkins}</div>
                         <div className="text-xs text-[#FBFAEE]/70">Check-ins</div>
                       </div>
                       <div className="bg-[#000000]/40 rounded-xl p-4 text-center border border-[#242424]/40">
+                         {/* FIX: Use optional chaining to safely display data */}
                         <div className="text-3xl font-bold text-green-400 mb-1">{data.stats.commitments_kept}</div>
                         <div className="text-xs text-[#FBFAEE]/70">Kept</div>
                       </div>
@@ -439,12 +451,14 @@ export default function Dashboard({ githubUsername }: DashboardProps) {
                     <div className="bg-[#000000]/40 rounded-xl p-4 border border-[#242424]/40">
                       <div className="flex justify-between items-center mb-2">
                         <span className="text-sm text-[#FBFAEE]/70">Average Energy</span>
+                         {/* FIX: Use optional chaining to safely display data */}
                         <span className="text-lg font-bold text-[#FBFAEE]">{data.stats.avg_energy.toFixed(1)}<span className="text-[#FBFAEE]/60 text-sm">/10</span></span>
                       </div>
                       <div className="w-full bg-[#000000]/50 rounded-full h-1.5 border border-[#242424]/30">
                         <div
+                           // FIX: Use optional chaining to safely set width style
                           className="bg-gradient-to-r from-[#933DC9] to-[#53118F] h-1.5 rounded-full transition-all duration-1000"
-                          style={{ width: `${data.stats.avg_energy * 10}%` }}
+                          style={{ width: `${(data.stats.avg_energy || 0) * 10}%` }}
                         ></div>
                       </div>
                     </div>

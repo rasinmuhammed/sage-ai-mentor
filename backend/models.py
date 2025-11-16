@@ -19,6 +19,7 @@ class User(Base):
     # Relationships
     goals = relationship("Goal", back_populates="user", cascade="all, delete-orphan")
     action_plans = relationship("ActionPlan", back_populates="user", cascade="all, delete-orphan")
+    # FIX: Changed 'backpopulates' to 'back_populates'
     pomodoro_sessions = relationship("PomodoroSession", back_populates="user", cascade="all, delete-orphan")
 
 class CheckIn(Base):
@@ -164,6 +165,7 @@ class Goal(Base):
     obstacles_identified = Column(JSON, nullable=True)
     
     # Relationships
+    # FIX: Changed 'backpopulates' to 'back_populates'
     user = relationship("User", back_populates="goals")
     subgoals = relationship("SubGoal", back_populates="parent_goal", cascade="all, delete-orphan")
     milestones = relationship("Milestone", back_populates="goal", cascade="all, delete-orphan")
@@ -711,7 +713,8 @@ class PomodoroSession(Base):
     interruptions = Column(Integer, default=0)
     
     # Relationships
-    user = relationship("User", backpopulates="pomodoro_sessions")
+    # FIX: Changed 'backpopulates' to 'back_populates'
+    user = relationship("User", back_populates="pomodoro_sessions")
 
 class PomodoroSessionCreate(BaseModel):
     session_type: str = "work"

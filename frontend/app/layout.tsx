@@ -2,10 +2,11 @@ import type { Metadata } from 'next'
 import { ClerkProvider } from '@clerk/nextjs'
 import { dark } from '@clerk/themes'
 import './globals.css'
-import { ErrorBoundary, ToastProvider } from '@/components/ErrorBoundary'
+import { ErrorBoundary, ToastProvider } from '@/components/ErrorBoundary' 
 
 export const metadata: Metadata = {
-  title: 'Reflog - Your AI Mentor',
+  // Brand Consistency: Renaming from 'Reflog - Your AI Mentor' to 'Reflog AI Mentor'
+  title: 'Reflog AI Mentor',
   description: 'AI mentor that provides brutally honest, data-driven feedback',
 }
 
