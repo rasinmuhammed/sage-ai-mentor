@@ -101,25 +101,9 @@ class NotificationResponse(BaseModel):
     priority: str
     read: bool
     action_url: Optional[str]
-    extra_data: Optional[Dict]  # Will map to extra_data in DB
+    extra_data: Optional[Dict] = None 
     created_at: datetime
     read_at: Optional[datetime]
-    
-    @classmethod
-    def from_orm(cls, obj):
-        # Custom mapping for the metadata field
-        return cls(
-            id=obj.id,
-            title=obj.title,
-            message=obj.message,
-            notification_type=obj.notification_type,
-            priority=obj.priority,
-            read=obj.read,
-            action_url=obj.action_url,
-            metadata=obj.extra_data,  
-            created_at=obj.created_at,
-            read_at=obj.read_at
-        )
     
     class Config:
         from_attributes = True
@@ -130,7 +114,7 @@ class NotificationCreate(BaseModel):
     notification_type: str
     priority: str = "normal"
     action_url: Optional[str] = None
-    metadata: Optional[Dict] = None
+    extra_data: Optional[Dict] = None
 
 class NotificationStats(BaseModel):
     total: int

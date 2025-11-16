@@ -12,6 +12,7 @@ from models import (
     NotificationResponse, NotificationStats,
     ActionPlanCreate, ActionPlanResponse, SkillFocusCreate,
     DailyTaskUpdate, SkillReminderResponse, SkillReminderCreate,
+    PomodoroSessionCreate, PomodoroSessionUpdate, PomodoroStatsResponse, # Added Pomodoro models
 )
 from github_integration import GitHubAnalyzer
 from crew import SageMentorCrew
@@ -21,6 +22,7 @@ from datetime import datetime, timedelta, time
 from typing import Optional
 from notification_service import NotificationService
 from action_plan_service import ActionPlanService
+from insight_engine import ProactiveInsightsEngine
 from cache import cache, cached, cache_dashboard, get_cached_dashboard, invalidate_user_cache
 
 init_db()
@@ -653,8 +655,6 @@ def reanalyze_life_decision(
         
         db.commit()
         db.refresh(life_event)
-        
-        print(f"✅ Re-analysis saved")
         
         return {
             "message": "Re-analysis complete",
@@ -1441,8 +1441,8 @@ def get_goals_dashboard(
                     "id": g.id,
                     "title": g.title or "Untitled Goal",
                     "goal_type": g.goal_type or "personal",  
-                    "priority": g.priority or "medium",    
-                    "progress": g.progress or 0.0,        
+                    "priority": g.priority or "medium",  
+                    "progress": g.progress or 0.0,      
                     "target_date": g.target_date.strftime("%Y-%m-%d") if g.target_date else None,
                     "subgoals_completed": len([sg for sg in g.subgoals if sg.status == 'completed']),
                     "subgoals_total": len(g.subgoals or []),
@@ -1884,10 +1884,34 @@ def get_notifications(
         models.Notification.created_at.desc()
     ).limit(limit).all()
     
-    # Convert to response format with metadata mapped from extra_data
-    return [
-        models.NotificationResponse.from_orm(n) for n in notifications
-    ]
+    # FIX: Use a robust manual dictionary mapping to guarantee the 'extra_data' field exists 
+    # and bypass any lingering issues with cached/old ORM methods or Pydantic versions.
+    results = []
+    for n in notifications:
+        try:
+            # Safely convert ORM object attributes
+            data_dict = {
+                "id": n.id,
+                "title": n.title,
+                "message": n.message,
+                "notification_type": n.notification_type,
+                "priority": n.priority,
+                "read": n.read,
+                # Use getattr() for fields that might be missing entirely if columns were added later
+                "action_url": getattr(n, 'action_url', None), 
+                "extra_data": getattr(n, 'extra_data', {}) if getattr(n, 'extra_data', None) is not None else {}, # Guarantees Dict
+                "created_at": n.created_at,
+                "read_at": n.read_at,
+            }
+            # Instantiate Pydantic model directly using the safe dictionary
+            results.append(models.NotificationResponse(**data_dict))
+        except Exception as e:
+            # Critical error handling for severely corrupted records
+            print(f"CRITICAL: Failed to validate Notification ID {n.id}. Skipping. Error: {e}")
+            continue 
+            
+    return results
+    # END FIX
 
 
 @app.get("/notifications/{github_username}/stats", response_model=NotificationStats)
