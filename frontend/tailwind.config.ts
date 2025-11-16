@@ -9,18 +9,39 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        'reflog-black': '#000000',
-        'reflog-raisin': '#242424', // Use for dark backgrounds/borders
-        'reflog-white': '#FBFAEE', // Use for text
-        'reflog-orchid': '#933DC9', // Primary accent
-        'reflog-violet': '#53118F', // Secondary/darker accent
-        
-        'reflog-orchid-dark': '#7d34ad', //  darker orchid
-        'reflog-violet-dark': '#420e71', //  darker violet
-
-        // Keep existing variables if needed, or replace them
-        background: 'var(--background)',
-        foreground: 'var(--foreground)',
+        // Premium color palette
+        primary: {
+          DEFAULT: '#933DC9', // Orchid
+          dark: '#53118F',    // Violet
+          light: '#C488F8',   // Light purple
+        },
+        surface: {
+          DEFAULT: '#242424', // Raisin Black
+          dark: '#000000',    // Pure Black
+        },
+        text: {
+          DEFAULT: '#FBFAEE', // Floral White
+        }
+      },
+      animation: {
+        'shimmer': 'shimmer 2s infinite',
+        'pulse-glow': 'pulse-glow 2s ease-in-out infinite',
+      },
+      keyframes: {
+        shimmer: {
+          '0%': { transform: 'translateX(-100%)' },
+          '100%': { transform: 'translateX(100%)' },
+        },
+        'pulse-glow': {
+          '0%, 100%': { 
+            opacity: '1',
+            boxShadow: '0 0 20px rgba(147, 61, 201, 0.5)'
+          },
+          '50%': { 
+            opacity: '0.8',
+            boxShadow: '0 0 30px rgba(147, 61, 201, 0.8)'
+          },
+        },
       },
     },
   },
