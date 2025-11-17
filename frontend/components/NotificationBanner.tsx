@@ -39,7 +39,9 @@ export default function NotificationBanner({
 
   const checkReminder = async () => {
     try {
-      const response = await axios.get(`${API_URL}/commitments/${githubUsername}/reminder-needed`)
+      const response = await axios.get(
+        `${API_URL}/commitments/${githubUsername}/reminder-needed`
+      )
       
       if (response.data.needs_reminder && !dismissed) {
         setReminder(response.data)
