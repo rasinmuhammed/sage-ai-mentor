@@ -6,7 +6,8 @@ import axios from 'axios'
 import { 
   Github, Brain, Target, TrendingUp, MessageCircle, 
   BookOpen, Menu, Bell, X, Calendar as CalendarIcon,
-  Zap, Activity, Timer, BarChart3, Settings, ChevronRight
+  Zap, Activity, Timer, BarChart3, Settings, ChevronRight,
+  Flame, CheckCircle, Clock, Coffee, Play, Pause, RotateCcw
 } from 'lucide-react'
 import CheckInModal from './CheckInModal' 
 import Chat from './Chat' 
@@ -17,6 +18,12 @@ import Notifications from './Notifications'
 import PomodoroTimer from './PomodoroTimer'
 import CommitmentTracker from './CommitmentTracker'
 import NotificationBell from './NotificationBell'
+import CommitmentCalendar from './CommitmentCalendar'
+import ActiveGoalsProgress from './ActiveGoalsProgress'
+import QuickStatsCard from './QuickStatsCard'
+import PomodoroQuickStart from './PomodoroQuickStart'
+import AIInsightsFeed from './AIInsightsFeed'
+import QuickActionPills from './QuickActionPills'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
@@ -33,6 +40,7 @@ export default function Dashboard({ githubUsername }: DashboardProps) {
   const [activeTab, setActiveTab] = useState<TabType>('overview')
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [todayCommitment, setTodayCommitment] = useState<any>(null)
+  const [showPomodoroWidget, setShowPomodoroWidget] = useState(false)
 
   useEffect(() => {
     loadDashboard()
@@ -166,29 +174,70 @@ export default function Dashboard({ githubUsername }: DashboardProps) {
       <main className="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {activeTab === 'overview' && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            {/* Left Sidebar - Quick Stats */}
+            {/* Left Sidebar - Quick Actions & Stats */}
             <div className="lg:col-span-3 space-y-4">
-              {/* Quick Actions Card */}
+              {/* Hero Card with Check-in */}
+              <div className="bg-gradient-to-br from-[#933DC9]/20 to-[#53118F]/20 border border-[#933DC9]/40 rounded-2xl p-5 relative overflow-hidden">
+                <div className="absolute inset-0 bg-gradient-to-br from-[#933DC9]/10 to-transparent"></div>
+                <div className="relative z-10">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center space-x-2">
+                      <CalendarIcon className="w-5 h-5 text-[#C488F8]" />
+                      <span className="text-sm font-semibold text-[#FBFAEE]">Today</span>
+                    </div>
+                    <span className="text-xs text-[#FBFAEE]/60">
+                      {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                    </span>
+                  </div>
+                  
+                  {!todayCommitment?.has_commitment ? (
+                    <button
+                      onClick={() => setShowCheckin(true)}
+                      className="w-full bg-gradient-to-r from-[#933DC9] to-[#53118F] text-[#FBFAEE] px-4 py-3 rounded-xl font-semibold hover:brightness-110 transition-all shadow-lg flex items-center justify-center group"
+                    >
+                      <CalendarIcon className="w-4 h-4 mr-2 group-hover:scale-110 transition-transform" />
+                      Daily Check-in
+                    </button>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="bg-[#000000]/40 rounded-lg p-3 border border-[#242424]/40">
+                        <p className="text-xs text-[#FBFAEE]/60 mb-1">Today's Commitment:</p>
+                        <p className="text-sm text-[#FBFAEE] italic line-clamp-2">"{todayCommitment.commitment}"</p>
+                      </div>
+                      {todayCommitment.needs_review && (
+                        <button
+                          onClick={() => {/* Handle review */}}
+                          className="w-full bg-orange-600 text-[#FBFAEE] py-2 rounded-lg font-semibold hover:brightness-110 transition text-sm"
+                        >
+                          Review Commitment
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Quick Pomodoro Widget */}
               <div className="bg-[#242424] border border-[#242424]/50 rounded-2xl p-4">
-                <h3 className="text-sm font-semibold text-[#FBFAEE]/70 mb-3 uppercase tracking-wider">
-                  Quick Actions
-                </h3>
-                <div className="space-y-2">
-                  <button
-                    onClick={() => setShowCheckin(true)}
-                    className="w-full bg-gradient-to-r from-[#933DC9] to-[#53118F] text-[#FBFAEE] px-4 py-3 rounded-xl font-semibold hover:brightness-110 transition flex items-center justify-between"
-                  >
-                    <span>Daily Check-in</span>
-                    <CalendarIcon className="w-4 h-4" />
-                  </button>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center space-x-2">
+                    <Timer className="w-4 h-4 text-[#FBFAEE]/70" />
+                    <span className="text-sm font-semibold text-[#FBFAEE]/90">Quick Focus</span>
+                  </div>
                   <button
                     onClick={() => setActiveTab('focus')}
-                    className="w-full bg-[#000000]/40 border border-[#242424]/60 text-[#FBFAEE] px-4 py-3 rounded-xl font-medium hover:bg-[#000000]/60 transition flex items-center justify-between"
+                    className="text-xs text-[#C488F8] hover:text-[#933DC9]"
                   >
-                    <span>Start Focus Session</span>
-                    <Timer className="w-4 h-4" />
+                    Full Timer →
                   </button>
                 </div>
+                <button
+                  onClick={() => setActiveTab('focus')}
+                  className="w-full bg-[#000000]/40 hover:bg-[#000000]/60 border border-[#242424]/60 text-[#FBFAEE] px-4 py-3 rounded-xl font-medium transition flex items-center justify-center group"
+                >
+                  <Play className="w-4 h-4 mr-2 group-hover:scale-110 transition-transform" />
+                  Start 25min Focus
+                </button>
               </div>
 
               {/* Stats Card */}
@@ -265,50 +314,25 @@ export default function Dashboard({ githubUsername }: DashboardProps) {
 
             {/* Main Content Area */}
             <div className="lg:col-span-6 space-y-6">
-              {/* Today's Focus Card */}
-              {todayCommitment?.has_commitment && (
-                <div className="bg-gradient-to-br from-[#933DC9]/20 to-[#53118F]/20 border border-[#933DC9]/40 rounded-2xl p-6">
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-lg font-bold text-[#FBFAEE]">Today's Focus</h3>
-                    {todayCommitment.needs_review && (
-                      <span className="px-3 py-1 bg-orange-600/30 text-orange-300 rounded-full text-xs font-semibold">
-                        Needs Review
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-[#FBFAEE]/90 italic mb-4">
-                    "{todayCommitment.commitment}"
-                  </p>
-                  <div className="flex items-center space-x-3">
-                    <button
-                      onClick={() => setActiveTab('focus')}
-                      className="flex-1 bg-gradient-to-r from-[#933DC9] to-[#53118F] text-[#FBFAEE] py-2 rounded-lg font-semibold hover:brightness-110 transition text-sm"
-                    >
-                      Start Focus Session
-                    </button>
-                    {todayCommitment.needs_review && (
-                      <button
-                        onClick={() => setActiveTab('overview')}
-                        className="px-4 py-2 bg-orange-600 text-[#FBFAEE] rounded-lg font-semibold hover:brightness-110 transition text-sm"
-                      >
-                        Review
-                      </button>
-                    )}
-                  </div>
-                </div>
-              )}
+              {/* Commitment Calendar */}
+              <CommitmentCalendar githubUsername={githubUsername} />
 
               {/* Recent Activity Feed */}
               <div className="bg-[#242424] border border-[#242424]/50 rounded-2xl p-6">
-                <h3 className="text-lg font-bold text-[#FBFAEE] mb-4">Recent Insights</h3>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-bold text-[#FBFAEE]">Recent Insights</h3>
+                  <button className="text-xs text-[#C488F8] hover:text-[#933DC9]">
+                    View All →
+                  </button>
+                </div>
                 <div className="space-y-3">
                   {data?.recent_advice?.slice(0, 3).map((advice: any) => (
                     <div
                       key={advice.id}
-                      className="bg-[#000000]/40 border border-[#242424]/40 rounded-xl p-4 hover:border-[#933DC9]/30 transition cursor-pointer"
+                      className="bg-[#000000]/40 border border-[#242424]/40 rounded-xl p-4 hover:border-[#933DC9]/30 transition cursor-pointer group"
                     >
                       <div className="flex items-start space-x-3">
-                        <div className="bg-gradient-to-r from-[#933DC9] to-[#53118F] p-2 rounded-lg flex-shrink-0">
+                        <div className="bg-gradient-to-r from-[#933DC9] to-[#53118F] p-2 rounded-lg flex-shrink-0 group-hover:scale-105 transition-transform">
                           <Brain className="w-4 h-4 text-[#FBFAEE]" />
                         </div>
                         <div className="flex-1 min-w-0">
@@ -342,9 +366,9 @@ export default function Dashboard({ githubUsername }: DashboardProps) {
         )}
 
         {activeTab === 'focus' && (
-          <div className="max-w-4xl mx-auto">
+          <div className="max-w-6xl mx-auto">
             <div className="mb-6">
-              <h2 className="text-2xl font-bold text-[#FBFAEE] mb-2">Focus Session</h2>
+              <h2 className="text-3xl font-bold text-[#FBFAEE] mb-2">Focus Session</h2>
               <p className="text-[#FBFAEE]/70">
                 Use the Pomodoro technique to maximize your productivity
               </p>

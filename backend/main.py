@@ -2851,6 +2851,62 @@ def calculate_pomodoro_streaks(user_id: int, db: Session) -> tuple:
     
     return current_streak, best_streak
 
+@app.get("/commitments/{github_username}/streak-detailed")
+def get_detailed_streak(github_username: str, db: Session = Depends(get_db)):
+    """Get detailed streak information based on daily check-ins"""
+    user = db.query(models.User).filter(
+        models.User.github_username == github_username
+    ).first()
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Get ALL check-ins from last year ordered by date
+    checkins = db.query(models.CheckIn).filter(
+        models.CheckIn.user_id == user.id,
+        models.CheckIn.timestamp >= datetime.now() - timedelta(days=365)
+    ).order_by(models.CheckIn.timestamp.desc()).all()
+    
+    # Group by date (not timestamp) to handle multiple check-ins per day
+    checkin_dates = set()
+    for checkin in checkins:
+        checkin_dates.add(checkin.timestamp.date())
+    
+    # Calculate current streak
+    current_streak = 0
+    check_date = datetime.now().date()
+    
+    while check_date in checkin_dates:
+        current_streak += 1
+        check_date -= timedelta(days=1)
+    
+    # Calculate best streak
+    sorted_dates = sorted(checkin_dates, reverse=True)
+    best_streak = 0
+    temp_streak = 1
+    
+    for i in range(len(sorted_dates) - 1):
+        if (sorted_dates[i] - sorted_dates[i + 1]).days == 1:
+            temp_streak += 1
+            best_streak = max(best_streak, temp_streak)
+        else:
+            temp_streak = 1
+    
+    best_streak = max(best_streak, current_streak)
+    
+    # Check if streak is at risk (no check-in today)
+    today = datetime.now().date()
+    has_checked_in_today = today in checkin_dates
+    
+    return {
+        "current_streak": current_streak,
+        "best_streak": best_streak,
+        "has_checked_in_today": has_checked_in_today,
+        "at_risk": not has_checked_in_today and current_streak > 0,
+        "total_days_active": len(checkin_dates),
+        "last_checkin_date": sorted_dates[0].isoformat() if sorted_dates else None
+    }
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
