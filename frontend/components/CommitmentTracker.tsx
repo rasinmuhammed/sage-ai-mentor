@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import axios from 'axios'
 import { 
   CheckCircle, XCircle, Clock, Flame, TrendingUp, 
-  Calendar, ChevronRight, Loader2
+  Calendar, ChevronRight, Loader2, AlertCircle // Added AlertCircle
 } from 'lucide-react'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
@@ -49,10 +49,11 @@ export default function CommitmentTracker({
   }, [githubUsername])
 
   const loadCommitmentData = async () => {
+      // MODIFICATION: Renamed `loadData` to `loadCommitmentData` to avoid conflict
       try {
         const [commitmentRes, statsRes, streakRes] = await Promise.all([
           axios.get(`${API_URL}/commitments/${githubUsername}/today`),
-          axios.get(`${API_URL}/commitments/${githubUsername}/stats?days=30`),
+          axios.get(`${API_URL}/commitments/${githubUsername}/stats?days=7`), // Always fetch 7-day stats
           axios.get(`${API_URL}/commitments/${githubUsername}/streak-detailed`)
         ])
 
@@ -78,7 +79,7 @@ export default function CommitmentTracker({
         { shipped, excuse: shipped ? null : excuse }
       )
       setShowReviewModal(false)
-      await loadData()
+      await loadCommitmentData() // MODIFICATION: Call renamed function
       onReviewComplete()
     } catch (error) {
       console.error('Failed to review commitment:', error)
@@ -215,7 +216,7 @@ export default function CommitmentTracker({
           </h3>
           
           <div className="space-y-3">
-            {/* Streak */}
+            {/* --- MODIFICATION: REMOVED CONFLICTING STREAK DISPLAY ---
             {stats.current_streak > 0 && (
               <div className="flex items-center justify-between p-3 bg-gradient-to-r from-orange-600/20 to-red-600/20 border border-orange-500/30 rounded-lg">
                 <div className="flex items-center space-x-2">
@@ -227,6 +228,7 @@ export default function CommitmentTracker({
                 </span>
               </div>
             )}
+            */}
 
             {/* Success Rate */}
             <div>

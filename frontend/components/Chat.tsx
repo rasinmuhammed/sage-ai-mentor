@@ -133,9 +133,10 @@ export default function Chat({ githubUsername }: ChatProps) {
     "How do I know if I'm actually improving or just busy?"
   ]
 
+  // MODIFICATION: Changed `h-[calc(100vh-12rem)]` to `h-full`
   return (
     // Main container - Use Raisin Black, Floral White text
-    <div className="flex flex-col h-[calc(100vh-12rem)] bg-[#242424] border border-[#242424]/50 rounded-3xl shadow-2xl overflow-hidden text-[#FBFAEE]">
+    <div className="flex flex-col h-full bg-[#242424] border border-[#242424]/50 rounded-3xl shadow-2xl overflow-hidden text-[#FBFAEE]">
       {/* Header - Use Purple gradient */}
       <div className="bg-gradient-to-r from-[#933DC9] to-[#53118F] text-[#FBFAEE] p-6 shadow-lg">
         <div className="flex items-center justify-between">

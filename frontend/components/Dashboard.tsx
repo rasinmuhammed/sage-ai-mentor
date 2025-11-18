@@ -7,7 +7,7 @@ import {
   Brain, Target, MessageCircle, 
   BookOpen, Menu, X, 
   Activity, Timer, Settings,
-  Flame
+  Flame, History // Added History icon
 } from 'lucide-react'
 import CheckInModal from './CheckInModal' 
 import Chat from './Chat' 
@@ -20,10 +20,10 @@ import CommitmentTracker from './CommitmentTracker'
 import NotificationBell from './NotificationBell'
 import CommitmentCalendar from './CommitmentCalendar'
 import ActiveGoalsProgress from './ActiveGoalsProgress'
-import QuickStatsCard from './QuickStatsCard'
 import PomodoroQuickStart from './PomodoroQuickStart'
 import AIInsightsFeed from './AIInsightsFeed'
 import QuickActionPills from './QuickActionPills'
+import InteractionHistory from './InteractionHistory' // Added Import
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
@@ -31,7 +31,8 @@ interface DashboardProps {
   githubUsername: string
 }
 
-type TabType = 'overview' | 'focus' | 'goals' | 'decisions' | 'chat' | 'notifications'
+// Added 'history' to TabType
+type TabType = 'overview' | 'focus' | 'goals' | 'decisions' | 'chat' | 'notifications' | 'history'
 
 export default function Dashboard({ githubUsername }: DashboardProps) {
   const [data, setData] = useState<any>(null)
@@ -40,7 +41,6 @@ export default function Dashboard({ githubUsername }: DashboardProps) {
   const [activeTab, setActiveTab] = useState<TabType>('overview')
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [todayCommitment, setTodayCommitment] = useState<any>(null)
-  const [currentStreak, setCurrentStreak] = useState(0)
   const [activeGoals, setActiveGoals] = useState<any[]>([])
 
   useEffect(() => {
@@ -49,16 +49,14 @@ export default function Dashboard({ githubUsername }: DashboardProps) {
 
   const loadDashboard = async () => {
     try {
-      const [dashboardRes, commitmentRes, streakRes, goalsRes] = await Promise.all([
+      const [dashboardRes, commitmentRes, goalsRes] = await Promise.all([
         axios.get(`${API_URL}/dashboard/${githubUsername}`),
         axios.get(`${API_URL}/commitments/${githubUsername}/today`),
-        axios.get(`${API_URL}/commitments/${githubUsername}/streak-detailed`),
         axios.get(`${API_URL}/goals/${githubUsername}/dashboard`)
       ])
       
       setData(dashboardRes.data)
       setTodayCommitment(commitmentRes.data)
-      setCurrentStreak(streakRes.data.current_streak)
       setActiveGoals(goalsRes.data.active_goals || [])
     } catch (err) {
       console.error('Failed to load dashboard:', err)
@@ -67,11 +65,13 @@ export default function Dashboard({ githubUsername }: DashboardProps) {
     }
   }
 
+  // Added History tab
   const tabs = [
     { id: 'overview', label: 'Overview', icon: Activity },
     { id: 'focus', label: 'Focus', icon: Timer },
     { id: 'goals', label: 'Goals', icon: Target },
     { id: 'decisions', label: 'Decisions', icon: BookOpen },
+    { id: 'history', label: 'History', icon: History },
     { id: 'chat', label: 'Chat', icon: MessageCircle },
   ]
 
@@ -104,8 +104,8 @@ export default function Dashboard({ githubUsername }: DashboardProps) {
   }
 
   return (
-    <div className="min-h-screen bg-[#000000] text-[#FBFAEE]">
-      {/* Compact Header */}
+    <div className="h-screen flex flex-col bg-[#000000] text-[#FBFAEE]">
+      {/* Header */}
       <header className="bg-[#242424]/80 border-b border-[#242424]/50 sticky top-0 z-40 backdrop-blur-lg">
         <div className="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
@@ -193,50 +193,26 @@ export default function Dashboard({ githubUsername }: DashboardProps) {
         </div>
       )}
 
-      {/* Main Content */}
-      <main className="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      {/* Main Content Area */}
+      <main className="flex-1 overflow-hidden">
         {activeTab === 'overview' && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 h-full p-4 sm:p-6">
             {/* Left Sidebar (3 cols) */}
-            <div className="lg:col-span-3 space-y-4">
-              {/* Streak Card */}
-              {currentStreak > 0 && (
-                <div className="bg-gradient-to-br from-orange-600/20 to-red-600/20 border border-orange-500/40 rounded-2xl p-5 relative overflow-hidden">
-                  <div className="absolute inset-0 bg-gradient-to-br from-orange-600/10 to-transparent"></div>
-                  <div className="relative z-10">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center space-x-2">
-                        <Flame className="w-6 h-6 text-orange-400 animate-pulse" />
-                        <span className="text-sm font-semibold text-orange-300">Current Streak</span>
-                      </div>
-                    </div>
-                    <div className="flex items-baseline space-x-2">
-                      <span className="text-5xl font-bold text-orange-300">{currentStreak}</span>
-                      <span className="text-lg text-orange-300/80">days</span>
-                    </div>
-                    <p className="text-xs text-orange-300/70 mt-2">
-                      {todayCommitment?.has_checked_in_today 
-                        ? "Keep it going! 🔥" 
-                        : "Check in today to keep your streak!"}
-                    </p>
-                  </div>
-                </div>
-              )}
-
+            <div className="lg:col-span-3 space-y-4 overflow-y-auto">
               {/* Quick Actions */}
               <QuickActionPills onAction={handleQuickAction} />
 
-              {/* Stats Card */}
-              {data?.stats && (
-                <QuickStatsCard stats={data.stats} />
+              {/* Active Goals Progress */}
+              {activeGoals.length > 0 && (
+                <ActiveGoalsProgress 
+                  goals={activeGoals}
+                  onViewAll={() => setActiveTab('goals')}
+                />
               )}
-
-              {/* Pomodoro Quick Start */}
-              <PomodoroQuickStart onStartFocus={() => setActiveTab('focus')} />
             </div>
 
             {/* Main Content Area (6 cols) */}
-            <div className="lg:col-span-6 space-y-6">
+            <div className="lg:col-span-6 space-y-4 overflow-y-auto">
               {/* Commitment Calendar */}
               <CommitmentCalendar githubUsername={githubUsername} />
 
@@ -250,15 +226,8 @@ export default function Dashboard({ githubUsername }: DashboardProps) {
                     date: advice.date,
                     type: advice.type
                   }))}
-                  onViewAll={() => setActiveTab('chat')}
-                />
-              )}
-
-              {/* Active Goals Progress */}
-              {activeGoals.length > 0 && (
-                <ActiveGoalsProgress 
-                  goals={activeGoals}
-                  onViewAll={() => setActiveTab('goals')}
+                  // Redirect "View All" to the new History tab
+                  onViewAll={() => setActiveTab('history')}
                 />
               )}
 
@@ -291,17 +260,19 @@ export default function Dashboard({ githubUsername }: DashboardProps) {
             </div>
 
             {/* Right Sidebar (3 cols) */}
-            <div className="lg:col-span-3">
+            <div className="lg:col-span-3 space-y-4 overflow-y-auto">
               <CommitmentTracker
                 githubUsername={githubUsername}
                 onReviewComplete={loadDashboard}
               />
+              <PomodoroQuickStart onStartFocus={() => setActiveTab('focus')} />
             </div>
           </div>
         )}
 
+        {/* Focus Tab */}
         {activeTab === 'focus' && (
-          <div className="max-w-6xl mx-auto">
+          <div className="max-w-6xl mx-auto h-full overflow-y-auto p-4 sm:p-6">
             <div className="mb-6">
               <h2 className="text-3xl font-bold text-[#FBFAEE] mb-2">Focus Session</h2>
               <p className="text-[#FBFAEE]/70">
@@ -316,22 +287,39 @@ export default function Dashboard({ githubUsername }: DashboardProps) {
           </div>
         )}
 
+        {/* Goals Tab */}
         {activeTab === 'goals' && (
-          <Goals githubUsername={githubUsername} />
+          <div className="h-full overflow-y-auto p-4 sm:p-6">
+            <Goals githubUsername={githubUsername} />
+          </div>
         )}
 
+        {/* Decisions Tab */}
         {activeTab === 'decisions' && (
-          <LifeDecisions githubUsername={githubUsername} />
+          <div className="h-full overflow-y-auto p-4 sm:p-6">
+            <LifeDecisions githubUsername={githubUsername} />
+          </div>
         )}
 
+        {/* NEW: History Tab */}
+        {activeTab === 'history' && (
+          <div className="h-full overflow-y-auto p-4 sm:p-6">
+            <InteractionHistory githubUsername={githubUsername} />
+          </div>
+        )}
+
+        {/* Chat Tab */}
         {activeTab === 'chat' && (
-          <div className="max-w-5xl mx-auto">
+          <div className="max-w-5xl mx-auto h-full p-4 sm:p-6">
             <Chat githubUsername={githubUsername} />
           </div>
         )}
 
+        {/* Notifications Tab */}
         {activeTab === 'notifications' && (
-          <Notifications githubUsername={githubUsername} />
+          <div className="h-full overflow-y-auto p-4 sm:p-6">
+            <Notifications githubUsername={githubUsername} />
+          </div>
         )}
       </main>
 
