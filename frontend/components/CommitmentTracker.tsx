@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from 'react'
 import axios from 'axios'
-import { 
-  CheckCircle, XCircle, Clock, Flame, TrendingUp, 
+import {
+  CheckCircle, XCircle, Clock, Flame, TrendingUp,
   Calendar, ChevronRight, Loader2, AlertCircle // Added AlertCircle
 } from 'lucide-react'
 
@@ -23,9 +23,9 @@ interface StreakData {
   last_checkin_date: string | null
 }
 
-export default function CommitmentTracker({ 
-  githubUsername, 
-  onReviewComplete 
+export default function CommitmentTracker({
+  githubUsername,
+  onReviewComplete
 }: CommitmentTrackerProps) {
   const [todayCommitment, setTodayCommitment] = useState<any>(null)
   const [stats, setStats] = useState<any>(null)
@@ -35,13 +35,13 @@ export default function CommitmentTracker({
   const [shipped, setShipped] = useState(true)
   const [excuse, setExcuse] = useState('')
   const [streakData, setStreakData] = useState<StreakData>({
-  current_streak: 0,
-  best_streak: 0,
-  has_checked_in_today: false,
-  at_risk: false,
-  total_days_active: 0,
-  last_checkin_date: null
-})
+    current_streak: 0,
+    best_streak: 0,
+    has_checked_in_today: false,
+    at_risk: false,
+    total_days_active: 0,
+    last_checkin_date: null
+  })
 
 
   useEffect(() => {
@@ -49,33 +49,33 @@ export default function CommitmentTracker({
   }, [githubUsername])
 
   const loadCommitmentData = async () => {
-      // MODIFICATION: Renamed `loadData` to `loadCommitmentData` to avoid conflict
-      try {
-        const [commitmentRes, statsRes, streakRes] = await Promise.all([
-          axios.get(`${API_URL}/commitments/${githubUsername}/today`),
-          axios.get(`${API_URL}/commitments/${githubUsername}/stats?days=7`), // Always fetch 7-day stats
-          axios.get(`${API_URL}/commitments/${githubUsername}/streak-detailed`)
-        ])
+    // MODIFICATION: Renamed `loadData` to `loadCommitmentData` to avoid conflict
+    try {
+      const [commitmentRes, statsRes, streakRes] = await Promise.all([
+        axios.get(`${API_URL}/commitments/${githubUsername}/today`),
+        axios.get(`${API_URL}/commitments/${githubUsername}/stats?days=7`), // Always fetch 7-day stats
+        axios.get(`${API_URL}/commitments/${githubUsername}/streak-detailed`)
+      ])
 
-        setTodayCommitment(commitmentRes.data)
-        setStats(statsRes.data)
-        setStreakData(streakRes.data)
-        
-      } catch (error) {
-        console.error('Failed to load commitment data:', error)
-      } finally {
-        if (loading) setLoading(false)
-      }
+      setTodayCommitment(commitmentRes.data)
+      setStats(statsRes.data)
+      setStreakData(streakRes.data)
+
+    } catch (error) {
+      console.error('Failed to load commitment data:', error)
+    } finally {
+      if (loading) setLoading(false)
     }
+  }
 
 
   const handleReview = async () => {
     if (!todayCommitment?.checkin_id) return
-    
+
     setReviewing(true)
     try {
       await axios.post(
-        `${API_URL}/commitments/${todayCommitment.checkin_id}/review`,
+        `${API_URL}/commitments/${githubUsername}/${todayCommitment.checkin_id}/review`,
         { shipped, excuse: shipped ? null : excuse }
       )
       setShowReviewModal(false)
@@ -105,18 +105,17 @@ export default function CommitmentTracker({
             Today
           </h3>
           {todayCommitment?.has_commitment && (
-            <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
-              todayCommitment.shipped === true
+            <span className={`px-2 py-1 rounded-full text-xs font-semibold ${todayCommitment.shipped === true
                 ? 'bg-green-900/30 text-green-300'
                 : todayCommitment.shipped === false
-                ? 'bg-red-900/30 text-red-300'
-                : 'bg-[#933DC9]/20 text-[#C488F8]'
-            }`}>
+                  ? 'bg-red-900/30 text-red-300'
+                  : 'bg-[#933DC9]/20 text-[#C488F8]'
+              }`}>
               {todayCommitment.shipped === true
                 ? 'Shipped ✓'
                 : todayCommitment.shipped === false
-                ? 'Missed'
-                : 'In Progress'}
+                  ? 'Missed'
+                  : 'In Progress'}
             </span>
           )}
         </div>
@@ -126,7 +125,7 @@ export default function CommitmentTracker({
             <p className="text-sm text-[#FBFAEE]/80 mb-3 line-clamp-2 italic">
               "{todayCommitment.commitment}"
             </p>
-            
+
             {todayCommitment.needs_review && (
               <button
                 onClick={() => setShowReviewModal(true)}
@@ -148,13 +147,12 @@ export default function CommitmentTracker({
       <div className="bg-gradient-to-r from-orange-600/20 to-red-600/20 border-2 border-orange-500/50 rounded-2xl p-6 shadow-xl mb-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
-            <Flame className={`w-12 h-12 ${
-              streakData.at_risk 
-                ? 'text-red-400 animate-pulse' 
-                : streakData.current_streak > 0 
-                ? 'text-orange-400' 
-                : 'text-[#FBFAEE]/30'
-            }`} />
+            <Flame className={`w-12 h-12 ${streakData.at_risk
+                ? 'text-red-400 animate-pulse'
+                : streakData.current_streak > 0
+                  ? 'text-orange-400'
+                  : 'text-[#FBFAEE]/30'
+              }`} />
             <div>
               <div className="text-5xl font-bold text-[#FBFAEE] mb-1">
                 {streakData.current_streak}
@@ -184,7 +182,7 @@ export default function CommitmentTracker({
             </div>
           </div>
         </div>
-        
+
         {/* Streak Progress Bar */}
         <div className="mt-4 space-y-2">
           <div className="flex justify-between text-xs text-[#FBFAEE]/60">
@@ -193,15 +191,14 @@ export default function CommitmentTracker({
           </div>
           <div className="w-full bg-[#000000]/50 rounded-full h-2 overflow-hidden">
             <div
-              className={`h-full rounded-full transition-all duration-500 ${
-                streakData.current_streak === streakData.best_streak
+              className={`h-full rounded-full transition-all duration-500 ${streakData.current_streak === streakData.best_streak
                   ? 'bg-gradient-to-r from-yellow-500 to-orange-500 animate-pulse'
                   : 'bg-gradient-to-r from-orange-500 to-red-500'
-              }`}
-              style={{ 
-                width: `${streakData.best_streak > 0 
-                  ? (streakData.current_streak / streakData.best_streak * 100) 
-                  : 0}%` 
+                }`}
+              style={{
+                width: `${streakData.best_streak > 0
+                  ? (streakData.current_streak / streakData.best_streak * 100)
+                  : 0}%`
               }}
             />
           </div>
@@ -214,7 +211,7 @@ export default function CommitmentTracker({
           <h3 className="text-sm font-semibold text-[#FBFAEE]/70 mb-3 uppercase tracking-wider">
             7-Day Stats
           </h3>
-          
+
           <div className="space-y-3">
             {/* --- MODIFICATION: REMOVED CONFLICTING STREAK DISPLAY ---
             {stats.current_streak > 0 && (
@@ -264,7 +261,7 @@ export default function CommitmentTracker({
             <h3 className="text-xl font-bold text-[#FBFAEE] mb-4">
               Did you ship it?
             </h3>
-            
+
             <p className="text-sm text-[#FBFAEE]/70 mb-4 italic">
               "{todayCommitment.commitment}"
             </p>
@@ -272,22 +269,20 @@ export default function CommitmentTracker({
             <div className="flex space-x-3 mb-4">
               <button
                 onClick={() => setShipped(true)}
-                className={`flex-1 py-3 rounded-xl font-semibold transition ${
-                  shipped
+                className={`flex-1 py-3 rounded-xl font-semibold transition ${shipped
                     ? 'bg-gradient-to-r from-green-600 to-emerald-500 text-white'
                     : 'bg-[#000000]/40 text-[#FBFAEE]/60 border border-[#242424]/60'
-                }`}
+                  }`}
               >
                 <CheckCircle className="w-5 h-5 mx-auto mb-1" />
                 Yes, Shipped
               </button>
               <button
                 onClick={() => setShipped(false)}
-                className={`flex-1 py-3 rounded-xl font-semibold transition ${
-                  !shipped
+                className={`flex-1 py-3 rounded-xl font-semibold transition ${!shipped
                     ? 'bg-gradient-to-r from-red-600 to-orange-600 text-white'
                     : 'bg-[#000000]/40 text-[#FBFAEE]/60 border border-[#242424]/60'
-                }`}
+                  }`}
               >
                 <XCircle className="w-5 h-5 mx-auto mb-1" />
                 No, Missed

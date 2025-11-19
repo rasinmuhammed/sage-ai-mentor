@@ -3,11 +3,12 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
 import {
-  Target, Plus, TrendingUp, CheckCircle, Clock, 
+  Target, Plus, TrendingUp, CheckCircle, Clock,
   MoreVertical, Edit, Trash2, Play, Loader2, X,
   ChevronRight, Award, Filter, Zap
 } from 'lucide-react'
 import EnhancedProgressModal from './EnhancedProgressModal'
+import CreateGoalModal from './CreateGoalModal'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
@@ -117,11 +118,10 @@ export default function Goals({ githubUsername }: GoalsProps) {
           <button
             key={status}
             onClick={() => setFilterStatus(status)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
-              filterStatus === status
-                ? 'bg-[#933DC9]/20 text-[#C488F8] border border-[#933DC9]/40'
-                : 'bg-[#000000]/40 text-[#FBFAEE]/70 hover:bg-[#000000]/60 border border-[#242424]/60'
-            }`}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition ${filterStatus === status
+              ? 'bg-[#933DC9]/20 text-[#C488F8] border border-[#933DC9]/40'
+              : 'bg-[#000000]/40 text-[#FBFAEE]/70 hover:bg-[#000000]/60 border border-[#242424]/60'
+              }`}
           >
             {status.charAt(0).toUpperCase() + status.slice(1)}
           </button>
@@ -137,7 +137,7 @@ export default function Goals({ githubUsername }: GoalsProps) {
               No {filterStatus} goals
             </h3>
             <p className="text-[#FBFAEE]/60 mb-6">
-              {filterStatus === 'active' 
+              {filterStatus === 'active'
                 ? 'Create your first goal to get started'
                 : `You don't have any ${filterStatus} goals`}
             </p>
@@ -202,16 +202,39 @@ export default function Goals({ githubUsername }: GoalsProps) {
                 </div>
               </div>
 
-              {/* Subgoals */}
-              {goal.subgoals && goal.subgoals.length > 0 && (
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-[#FBFAEE]/60">Tasks</span>
-                  <span className="font-semibold text-[#FBFAEE]">
-                    {goal.subgoals.filter((sg: any) => sg.status === 'completed').length}/
-                    {goal.subgoals.length}
-                  </span>
-                </div>
-              )}
+              {/* Milestones & Tasks */}
+              <div className="mt-4 space-y-3">
+                {/* Next Milestone */}
+                {goal.milestones && goal.milestones.find((m: any) => !m.achieved) && (
+                  <div className="bg-[#000000]/30 rounded-lg p-3 border border-[#242424]/50 flex items-start space-x-3">
+                    <div className="bg-[#933DC9]/20 p-1.5 rounded-md mt-0.5">
+                      <Award className="w-4 h-4 text-[#C488F8]" />
+                    </div>
+                    <div>
+                      <div className="text-xs text-[#FBFAEE]/60 uppercase tracking-wider font-medium mb-0.5">Next Milestone</div>
+                      <div className="text-sm font-medium text-[#FBFAEE]">
+                        {goal.milestones.find((m: any) => !m.achieved).title}
+                      </div>
+                      <div className="text-xs text-[#FBFAEE]/50 mt-1">
+                        Target: {new Date(goal.milestones.find((m: any) => !m.achieved).target_date).toLocaleDateString()}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Subgoals/Tasks Count */}
+                {goal.subgoals && goal.subgoals.length > 0 && (
+                  <div className="flex items-center justify-between text-xs px-1">
+                    <span className="text-[#FBFAEE]/60 flex items-center">
+                      <CheckCircle className="w-3 h-3 mr-1.5" />
+                      Tasks Completed
+                    </span>
+                    <span className="font-medium text-[#FBFAEE] bg-[#242424] px-2 py-0.5 rounded-full border border-[#242424]/50">
+                      {goal.subgoals.filter((sg: any) => sg.status === 'completed').length} / {goal.subgoals.length}
+                    </span>
+                  </div>
+                )}
+              </div>
 
               {/* Footer */}
               <div className="flex items-center justify-between mt-3 pt-3 border-t border-[#242424]/50">
@@ -252,6 +275,17 @@ export default function Goals({ githubUsername }: GoalsProps) {
           onComplete={() => {
             setShowProgressModal(false)
             setSelectedGoal(null)
+            loadGoals()
+          }}
+        />
+      )}
+
+      {showCreateModal && (
+        <CreateGoalModal
+          githubUsername={githubUsername}
+          onClose={() => setShowCreateModal(false)}
+          onComplete={() => {
+            setShowCreateModal(false)
             loadGoals()
           }}
         />

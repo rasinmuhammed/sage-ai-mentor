@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from 'react'
 import axios from 'axios'
-import { X, Loader2, Calendar, Brain, AlertCircle, Zap, Target, Flame, History, CheckCircle } from 'lucide-react'
+import { X, Loader2, Calendar, Brain, AlertCircle, Zap, Target, Flame, History, CheckCircle, XCircle } from 'lucide-react'
 import MarkdownRenderer from './MarkdownRenderer'
+import FirstTimeTooltip from './FirstTimeTooltip'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
@@ -108,6 +109,13 @@ export default function CheckInModal({ githubUsername, onClose, onComplete }: Ch
       })
 
       setAiResponse(response.data.ai_response || "Check-in submitted successfully.")
+
+      // Track onboarding progress
+      if (typeof window !== 'undefined') {
+        const { updateOnboardingProgress } = require('@/lib/onboardingStorage')
+        updateOnboardingProgress({ hasCompletedFirstCheckin: true })
+      }
+
       setStep(2)
     } catch (err) {
       console.error('Check-in failed:', err)
@@ -137,7 +145,7 @@ export default function CheckInModal({ githubUsername, onClose, onComplete }: Ch
   return (
     <div className="fixed inset-0 bg-[#000000]/95 backdrop-blur-md flex items-center justify-center p-4 z-50 animate-in fade-in duration-200 text-[#FBFAEE]">
       <div className="bg-gradient-to-br from-[#242424] via-[#1a1a1a] to-[#242424] border border-[#933DC9]/30 rounded-3xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col overflow-hidden">
-        
+
         {/* Header with Streak */}
         <div className="relative p-6 border-b border-[#242424]/60 bg-gradient-to-r from-[#933DC9]/10 to-[#53118F]/10">
           <div className="absolute inset-0 bg-[url('/grid.svg')] opacity-5"></div>
@@ -227,7 +235,7 @@ export default function CheckInModal({ githubUsername, onClose, onComplete }: Ch
               {/* Energy Level - Enhanced */}
               <div className="relative">
                 <label className="block text-sm font-semibold text-[#FBFAEE]/90 mb-3">
-                  Energy Level: 
+                  Energy Level:
                   <span className={`text-3xl font-bold ml-3 inline-flex items-center gap-2`}>
                     <span className={`bg-gradient-to-r ${getEnergyColor(energyLevel)} bg-clip-text text-transparent`}>
                       {energyLevel}
@@ -263,11 +271,10 @@ export default function CheckInModal({ githubUsername, onClose, onComplete }: Ch
                       key={option.value}
                       type="button"
                       onClick={() => setMood(option.value)}
-                      className={`p-3 rounded-xl text-center transition-all border-2 ${
-                        mood === option.value
-                          ? 'bg-gradient-to-br from-[#933DC9]/30 to-[#53118F]/30 border-[#933DC9] scale-105 shadow-lg'
-                          : 'bg-[#000000]/30 border-[#242424]/60 hover:border-[#933DC9]/50 hover:scale-105'
-                      }`}
+                      className={`p-3 rounded-xl text-center transition-all border-2 ${mood === option.value
+                        ? 'bg-gradient-to-br from-[#933DC9]/30 to-[#53118F]/30 border-[#933DC9] scale-105 shadow-lg'
+                        : 'bg-[#000000]/30 border-[#242424]/60 hover:border-[#933DC9]/50 hover:scale-105'
+                        }`}
                     >
                       <div className="text-3xl mb-1">{option.emoji}</div>
                       <div className="text-[10px] text-[#FBFAEE]/70 font-medium">{option.label}</div>
@@ -326,6 +333,12 @@ export default function CheckInModal({ githubUsername, onClose, onComplete }: Ch
                   className="w-full px-4 py-3 bg-[#000000]/50 border border-[#242424]/60 text-[#FBFAEE] placeholder-[#FBFAEE]/40 rounded-xl focus:ring-2 focus:ring-[#933DC9] focus:border-[#933DC9] resize-none transition duration-150"
                   rows={2}
                   required
+                />
+                <FirstTimeTooltip
+                  id="first_checkin_commitment"
+                  title="Be Specific"
+                  description="Don't say 'work on project'. Say 'implement user auth API endpoint by 5pm'."
+                  position="bottom"
                 />
                 <p className="text-xs text-[#FBFAEE]/60 mt-2 flex items-start">
                   <Zap className="w-3 h-3 mr-1 mt-0.5 flex-shrink-0 text-yellow-400" />

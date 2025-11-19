@@ -61,6 +61,7 @@ interface SkillFocusSummary {
 interface TaskCardProps {
   task: DailyTask
   planId: number
+  githubUsername: string
   onComplete: () => void
 }
 
@@ -102,10 +103,10 @@ export default function ActionPlans({ githubUsername }: { githubUsername: string
         axios.get<ActionPlan[]>(`${API_URL}/action-plans/${githubUsername}`),
         axios.get<SkillFocusSummary>(`${API_URL}/skill-focus/${githubUsername}/summary?days=7`)
       ])
-      
+
       setPlans(plansRes.data)
       setSkillFocusSummary(focusRes.data)
-      
+
       const active = plansRes.data.find(p => p.status === 'active')
       if (active) {
         setActivePlan(active)
@@ -121,27 +122,27 @@ export default function ActionPlans({ githubUsername }: { githubUsername: string
       setLoading(false)
     }
   }
-  
+
   const handleAdvanceDay = async (planId: number) => {
     setAdvancingDay(true);
     try {
-        const response = await axios.post(`${API_URL}/action-plans/${githubUsername}/${planId}/advance-day`);
-        
-        // Handle warning if tasks are incomplete but user advances anyway
-        if (response.data.warning) {
-            alert(`Warning: ${response.data.warning}. Incomplete tasks: ${response.data.incomplete_tasks.join(', ')}. Advancing anyway.`);
-        } else if (response.data.plan_completed) {
-            alert('Plan completed! Congratulations!');
-        } else {
-            alert(`Advanced to Day ${response.data.current_day}!`);
-        }
+      const response = await axios.post(`${API_URL}/action-plans/${githubUsername}/${planId}/advance-day`);
 
-        loadData(); // Reload all data to refresh active plan, tasks, and day number
+      // Handle warning if tasks are incomplete but user advances anyway
+      if (response.data.warning) {
+        alert(`Warning: ${response.data.warning}. Incomplete tasks: ${response.data.incomplete_tasks.join(', ')}. Advancing anyway.`);
+      } else if (response.data.plan_completed) {
+        alert('Plan completed! Congratulations!');
+      } else {
+        alert(`Advanced to Day ${response.data.current_day}!`);
+      }
+
+      loadData(); // Reload all data to refresh active plan, tasks, and day number
     } catch (error) {
-        console.error('Failed to advance day:', error);
-        alert('Failed to advance day.');
+      console.error('Failed to advance day:', error);
+      alert('Failed to advance day.');
     } finally {
-        setAdvancingDay(false);
+      setAdvancingDay(false);
     }
   };
 
@@ -163,7 +164,7 @@ export default function ActionPlans({ githubUsername }: { githubUsername: string
       </div>
     )
   }
-  
+
   if (error) {
     return (
       <div className="bg-[#242424] border border-red-500/40 rounded-2xl p-6 text-center">
@@ -182,46 +183,65 @@ export default function ActionPlans({ githubUsername }: { githubUsername: string
   return (
     <div className="space-y-6 text-[#FBFAEE]">
       {/* Header */}
-      <div className="bg-[#242424] border border-[#242424]/50 rounded-2xl shadow-xl p-6">
-        <div className="flex items-center justify-between mb-6">
+      <div className="bg-[#242424] border border-[#242424]/50 rounded-2xl shadow-xl p-6 relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-64 h-64 bg-[#933DC9]/10 rounded-full blur-3xl -mr-32 -mt-32 pointer-events-none"></div>
+
+        <div className="flex items-center justify-between mb-8 relative z-10">
           <div className="flex items-center">
-            <div className="bg-gradient-to-br from-[#933DC9] to-[#53118F] p-4 rounded-2xl shadow-lg mr-4">
+            <div className="bg-gradient-to-br from-[#933DC9] to-[#53118F] p-4 rounded-2xl shadow-lg mr-5">
               <Target className="w-8 h-8 text-[#FBFAEE]" />
             </div>
             <div>
-              <h2 className="text-3xl font-bold">30-Day Action Plans</h2>
-              <p className="text-[#FBFAEE]/70">Structured learning paths to mastery</p>
+              <h2 className="text-3xl font-bold text-[#FBFAEE]">Learning Paths</h2>
+              <p className="text-[#FBFAEE]/60 mt-1">Structured action plans to master new skills</p>
             </div>
           </div>
           <button
             onClick={() => setShowCreateModal(true)}
-            className="bg-gradient-to-r from-[#933DC9] to-[#53118F] text-[#FBFAEE] px-6 py-3 rounded-xl font-semibold hover:brightness-110 transition flex items-center"
+            className="bg-[#FBFAEE] text-black px-6 py-3 rounded-xl font-bold hover:bg-[#FBFAEE]/90 transition flex items-center shadow-lg shadow-white/5"
           >
             <Plus className="w-5 h-5 mr-2" />
             New Plan
           </button>
         </div>
 
-        {/* Stats Row */}
+        {/* Skill Visualization */}
         {skillFocusSummary && (
-          <div className="grid grid-cols-3 gap-4">
-            <div className="bg-[#000000]/40 rounded-xl p-4 border border-[#242424]/40">
-              <div className="text-3xl font-bold text-[#C488F8] mb-1">
-                {Math.round((skillFocusSummary.total_time || 0) / 60)}h
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 relative z-10">
+            {/* Total Time Card */}
+            <div className="bg-[#000000]/40 rounded-xl p-5 border border-[#242424]/40 backdrop-blur-sm">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-medium text-[#FBFAEE]/60 uppercase tracking-wider">Total Focus</span>
+                <Clock className="w-4 h-4 text-[#C488F8]" />
               </div>
-              <div className="text-xs text-[#FBFAEE]/70">Total Focus (7d)</div>
+              <div className="text-4xl font-bold text-[#FBFAEE] mb-1">
+                {Math.round((skillFocusSummary.total_time || 0) / 60)}<span className="text-lg text-[#FBFAEE]/40 font-normal ml-1">hrs</span>
+              </div>
+              <div className="text-xs text-[#FBFAEE]/40">Last 7 days</div>
             </div>
-            <div className="bg-[#000000]/40 rounded-xl p-4 border border-[#242424]/40">
-              <div className="text-3xl font-bold text-green-400 mb-1">
-                {Object.keys(skillFocusSummary.skills).length}
+
+            {/* Skills Breakdown */}
+            <div className="col-span-2 bg-[#000000]/40 rounded-xl p-5 border border-[#242424]/40 backdrop-blur-sm flex flex-col justify-center">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs font-medium text-[#FBFAEE]/60 uppercase tracking-wider">Skill Distribution</span>
+                <span className="text-xs text-[#FBFAEE]/40">{Object.keys(skillFocusSummary.skills).length} active skills</span>
               </div>
-              <div className="text-xs text-[#FBFAEE]/70">Skills Practiced</div>
-            </div>
-            <div className="bg-[#000000]/40 rounded-xl p-4 border border-[#242424]/40">
-              <div className="text-3xl font-bold text-orange-400 mb-1">
-                {skillFocusSummary.total_sessions}
+              <div className="space-y-3">
+                {Object.entries(skillFocusSummary.skills).slice(0, 3).map(([name, data]: [string, any], idx) => (
+                  <div key={idx} className="relative">
+                    <div className="flex justify-between text-xs mb-1">
+                      <span className="text-[#FBFAEE]/80 font-medium">{name}</span>
+                      <span className="text-[#FBFAEE]/60">{Math.round(data.total_minutes / 60)}h</span>
+                    </div>
+                    <div className="w-full bg-[#242424] rounded-full h-1.5 overflow-hidden">
+                      <div
+                        className="bg-gradient-to-r from-[#933DC9] to-[#C488F8] h-full rounded-full opacity-80"
+                        style={{ width: `${Math.min(100, (data.total_minutes / (skillFocusSummary.total_time || 1)) * 100)}%` }}
+                      />
+                    </div>
+                  </div>
+                ))}
               </div>
-              <div className="text-xs text-[#FBFAEE]/70">Total Sessions</div>
             </div>
           </div>
         )}
@@ -249,10 +269,10 @@ export default function ActionPlans({ githubUsername }: { githubUsername: string
           {/* Today's Tasks */}
           <div className="space-y-3 mb-4">
             {todayTasks.tasks.map((task: DailyTask) => (
-              <TaskCard key={task.id} task={task} planId={activePlan.id} onComplete={loadData} />
+              <TaskCard key={task.id} task={task} planId={activePlan.id} githubUsername={githubUsername} onComplete={loadData} />
             ))}
           </div>
-          
+
           {/* Action Buttons */}
           <div className="flex items-center space-x-4 pt-4 border-t border-[#242424]/50">
             {todayTasks.tasks.every((t: DailyTask) => t.status === 'completed') ? (
@@ -261,12 +281,12 @@ export default function ActionPlans({ githubUsername }: { githubUsername: string
                 disabled={advancingDay}
                 className="flex-1 bg-green-600 hover:bg-green-700 text-[#FBFAEE] py-3 rounded-xl font-bold transition disabled:opacity-50 flex items-center justify-center"
               >
-                {advancingDay ? <Loader2 className="w-5 h-5 animate-spin"/> : <ArrowRight className="w-5 h-5 mr-2" />}
+                {advancingDay ? <Loader2 className="w-5 h-5 animate-spin" /> : <ArrowRight className="w-5 h-5 mr-2" />}
                 {activePlan.current_day >= 30 ? 'Finalize Plan' : 'Advance to Next Day'}
               </button>
             ) : (
               <div className="flex-1 text-sm text-yellow-300 flex items-center space-x-2 bg-yellow-900/30 p-3 rounded-xl">
-                <AlertCircle className="w-5 h-5"/>
+                <AlertCircle className="w-5 h-5" />
                 <span>Complete all tasks to advance to Day {activePlan.current_day + 1}.</span>
               </div>
             )}
@@ -307,9 +327,9 @@ export default function ActionPlans({ githubUsername }: { githubUsername: string
           </div>
         ) : (
           plans.map(plan => (
-            <PlanCard 
-              key={plan.id} 
-              plan={plan} 
+            <PlanCard
+              key={plan.id}
+              plan={plan}
               expanded={expandedPlan === plan.id}
               onToggle={() => setExpandedPlan(expandedPlan === plan.id ? null : plan.id)}
               onRefresh={loadData}
@@ -335,7 +355,7 @@ export default function ActionPlans({ githubUsername }: { githubUsername: string
 
 // --- Helper Components (Moved from JSX file and typed) ---
 
-function TaskCard({ task, planId, onComplete }: TaskCardProps) {
+function TaskCard({ task, planId, githubUsername, onComplete }: TaskCardProps) {
   const [completing, setCompleting] = useState(false)
   const [showFeedback, setShowFeedback] = useState(false)
   const [timeSpent, setTimeSpent] = useState<string>('')
@@ -345,11 +365,11 @@ function TaskCard({ task, planId, onComplete }: TaskCardProps) {
 
   const handleComplete = async () => {
     if (task.status === 'completed') return
-    
+
     setCompleting(true)
     try {
       const response = await axios.post(
-        `${API_URL}/action-plans/${planId}/tasks/${task.id}/complete`,
+        `${API_URL}/action-plans/${githubUsername}/${planId}/tasks/${task.id}/complete`,
         {
           status: 'completed',
           actual_time_spent: parseInt(timeSpent || '0') || task.estimated_time,
@@ -394,7 +414,7 @@ function TaskCard({ task, planId, onComplete }: TaskCardProps) {
           <h4 className="font-semibold text-[#C488F8]">AI Feedback</h4>
         </div>
         {/* Using MarkdownRenderer here to display the AI feedback content */}
-        <p className="text-sm text-[#FBFAEE]/70 leading-relaxed">{feedback}</p> 
+        <p className="text-sm text-[#FBFAEE]/70 leading-relaxed">{feedback}</p>
         <button
           onClick={() => setShowFeedback(false)}
           className="mt-3 text-sm text-[#C488F8] hover:text-[#933DC9]"
@@ -416,11 +436,10 @@ function TaskCard({ task, planId, onComplete }: TaskCardProps) {
               <Clock className="w-3 h-3 mr-1" />
               {task.estimated_time} mins
             </span>
-            <span className={`px-2 py-0.5 rounded ${
-              task.difficulty === 'easy' ? 'bg-green-900/40 text-green-300 border border-green-500/40' :
+            <span className={`px-2 py-0.5 rounded ${task.difficulty === 'easy' ? 'bg-green-900/40 text-green-300 border border-green-500/40' :
               task.difficulty === 'medium' ? 'bg-yellow-900/40 text-yellow-300 border border-yellow-500/40' :
-              'bg-red-900/40 text-red-300 border border-red-500/40'
-            }`}>
+                'bg-red-900/40 text-red-300 border border-red-500/40'
+              }`}>
               {task.difficulty}
             </span>
           </div>
@@ -522,7 +541,7 @@ function PlanCard({ plan, expanded, onToggle, onRefresh }: PlanCardProps) {
               <p className="text-sm text-[#FBFAEE]/70 line-clamp-3">{plan.ai_analysis}</p>
             </div>
           )}
-          
+
           {plan.skills_to_focus && plan.skills_to_focus.skills && (
             <div className="mb-4">
               <h4 className="text-sm font-semibold text-[#FBFAEE] mb-2">Focus Skills</h4>

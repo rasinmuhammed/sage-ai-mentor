@@ -4,6 +4,8 @@ import { useState } from 'react'
 import { useUser } from '@clerk/nextjs'
 import axios from 'axios'
 import { Github, Loader2, CheckCircle, AlertCircle, ExternalLink, ArrowRight, Brain } from 'lucide-react'
+import OnboardingWalkthrough from './OnboardingWalkthrough'
+import InteractiveTutorial from './InteractiveTutorial'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
@@ -18,6 +20,8 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
   const [error, setError] = useState('')
   const [step, setStep] = useState<'input' | 'analyzing' | 'success'>('input')
   const [analysisResults, setAnalysisResults] = useState<any>(null)
+  const [showWalkthrough, setShowWalkthrough] = useState(false)
+  const [showTutorial, setShowTutorial] = useState(false)
 
   const validateGitHubUsername = (username: string): boolean => {
     // GitHub username rules: 1-39 characters, alphanumeric and hyphens only
@@ -271,7 +275,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
             </div>
           )}
 
-          {step === 'success' && analysisResults && (
+          {step === 'success' && analysisResults && !showWalkthrough && (
             <div className="text-center py-12">
               <div className="mb-6">
                 <div className="w-24 h-24 mx-auto bg-gradient-to-br from-green-500 to-emerald-500 rounded-full flex items-center justify-center shadow-lg">
@@ -321,9 +325,33 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
               >
                 Skip wait, go now →
               </button>
+              <button
+                onClick={() => setShowWalkthrough(true)}
+                className="mt-6 bg-gradient-to-r from-[#933DC9] to-[#53118F] text-[#FBFAEE] px-8 py-4 rounded-xl font-semibold hover:brightness-110 transition-all shadow-lg group"
+              >
+                Show Me How It Works
+                <ArrowRight className="inline-block w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
+              </button>
             </div>
           )}
         </div>
+        {showWalkthrough && !showTutorial && (
+          <OnboardingWalkthrough 
+              onComplete={() => {
+                setShowWalkthrough(false)
+                setShowTutorial(true)
+              }}
+            />
+          )}
+
+          {showTutorial && (
+            <InteractiveTutorial 
+              onComplete={() => {
+                setShowTutorial(false)
+                onComplete(username)
+              }}
+            />
+          )}
 
         {/* Footer */}
         <div className="mt-8 text-center">

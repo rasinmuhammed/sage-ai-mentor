@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import axios from 'axios'
 import { X, Loader2, Plus, Trash2 } from 'lucide-react'
+import FirstTimeTooltip from './FirstTimeTooltip'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
@@ -42,6 +43,12 @@ export default function CreateGoalModal({ githubUsername, onClose, onComplete }:
         success_criteria: successCriteria.filter(c => c.trim())
       })
 
+      // Track onboarding progress
+      if (typeof window !== 'undefined') {
+        const { updateOnboardingProgress } = require('@/lib/onboardingStorage')
+        updateOnboardingProgress({ hasCreatedFirstGoal: true })
+      }
+
       onComplete()
     } catch (error) {
       console.error('Failed to create goal:', error)
@@ -67,14 +74,22 @@ export default function CreateGoalModal({ githubUsername, onClose, onComplete }:
             <label className="block text-sm font-medium text-[#FBFAEE]/80 mb-1.5">
               Goal Title <span className="text-red-400">*</span>
             </label>
-            <input
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g., Become a Senior Developer"
-              className="w-full px-4 py-2.5 bg-[#000000]/50 border border-[#242424]/60 text-[#FBFAEE] placeholder-[#FBFAEE]/50 rounded-lg focus:ring-2 focus:ring-[#933DC9] focus:border-transparent"
-              required
-            />
+            <div className="relative">
+              <input
+                type="text"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="e.g., Become a Senior Developer"
+                className="w-full px-4 py-2.5 bg-[#000000]/50 border border-[#242424]/60 text-[#FBFAEE] placeholder-[#FBFAEE]/50 rounded-lg focus:ring-2 focus:ring-[#933DC9] focus:border-transparent"
+                required
+              />
+              <FirstTimeTooltip
+                id="first_goal_title"
+                title="Think Big"
+                description="Goals should be ambitious but achievable. 'Learn Rust' is better than 'Read a book'."
+                position="top"
+              />
+            </div>
           </div>
 
           {/* Description */}

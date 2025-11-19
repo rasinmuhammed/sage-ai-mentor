@@ -4,7 +4,7 @@ from sqlalchemy import select, func
 from sqlalchemy.orm import Session, joinedload, selectinload
 from typing import List, Dict, Optional
 import models
-from database import engine, get_db, init_db
+from database import system_engine, get_system_db, init_system_db, get_user_db_engine, UserBase
 from models import (
     UserCreate, UserResponse, CheckInCreate, CheckInUpdate, CheckInResponse,
     AgentAdviceResponse, GitHubAnalysisResponse, ChatMessage,
@@ -23,7 +23,7 @@ from notification_service import NotificationService
 from action_plan_service import ActionPlanService
 from cache import cache, cached, cache_dashboard, get_cached_dashboard, invalidate_user_cache
 
-init_db()
+init_system_db()
 
 app = FastAPI(title="Reflog AI Mentor API", version="1.0.0")
 
@@ -43,6 +43,43 @@ github_analyzer = GitHubAnalyzer()
 sage_crew = SageMentorCrew()
 action_plan_service = ActionPlanService()
 
+def get_user_db(github_username: str, system_db: Session = Depends(get_system_db)):
+    """
+    Dependency to get a database session for a specific user's Neon DB.
+    Requires github_username in the path parameters.
+    """
+    user = system_db.query(models.User).filter(
+        models.User.github_username == github_username
+    ).first()
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    if not user.neon_db_url:
+        # Fallback for development or initial setup - maybe raise error in strict mode
+        # For now, raise error to enforce BYOM
+        raise HTTPException(
+            status_code=400, 
+            detail="Database not configured. Please set your Neon Database URL in Settings."
+        )
+    
+    try:
+        engine = get_user_db_engine(user.neon_db_url)
+        # Ensure tables exist in user's DB
+        # Note: In production, we might want a better migration strategy than create_all on every request
+        # But for this "BYOM" app, it ensures the user's DB is always up to date
+        UserBase.metadata.create_all(bind=engine)
+        
+        SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+        db = SessionLocal()
+        yield db
+    except Exception as e:
+        print(f"Failed to connect to user database: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to connect to your database: {str(e)}")
+    finally:
+        if 'db' in locals():
+            db.close()
+
 @app.get("/")
 def read_root():
     return {
@@ -52,7 +89,7 @@ def read_root():
     }
 
 @app.post("/users", response_model=UserResponse)
-def create_user(user: UserCreate, db: Session = Depends(get_db)):
+def create_user(user: UserCreate, db: Session = Depends(get_system_db)):
     """
     Create or update user - idempotent operation
     If user exists, update their email and return existing user
@@ -88,7 +125,7 @@ def create_user(user: UserCreate, db: Session = Depends(get_db)):
 
 
 @app.get("/users/{github_username}", response_model=UserResponse)
-def get_user(github_username: str, db: Session = Depends(get_db)):
+def get_user(github_username: str, db: Session = Depends(get_system_db)):
     """Get user by GitHub username"""
     user = db.query(models.User).filter(
         models.User.github_username == github_username
@@ -104,7 +141,7 @@ def get_user(github_username: str, db: Session = Depends(get_db)):
 
 
 @app.patch("/users/{github_username}/complete-onboarding")
-def complete_onboarding(github_username: str, db: Session = Depends(get_db)):
+def complete_onboarding(github_username: str, db: Session = Depends(get_system_db)):
     """Mark user onboarding as complete"""
     user = db.query(models.User).filter(
         models.User.github_username == github_username
@@ -122,11 +159,16 @@ def complete_onboarding(github_username: str, db: Session = Depends(get_db)):
 
 # Also improve the analyze-github endpoint error handling
 @app.post("/analyze-github/{github_username}")
-def analyze_github(github_username: str, db: Session = Depends(get_db)):
+def analyze_github(
+    github_username: str, 
+    db: Session = Depends(get_user_db), # Use User DB for storing analysis
+    system_db: Session = Depends(get_system_db), # Use System DB for user lookup/updates
+    x_groq_key: Optional[str] = Header(None, alias="X-Groq-Key")
+):
     """Analyze GitHub profile and store results"""
     
-    # Get or create user
-    user = db.query(models.User).filter(
+    # Get user from System DB to update onboarding status
+    user = system_db.query(models.User).filter(
         models.User.github_username == github_username
     ).first()
     
@@ -194,7 +236,7 @@ def analyze_github(github_username: str, db: Session = Depends(get_db)):
     ]
     
     # Run AI analysis
-    crew_result = sage_crew.analyze_developer(github_data, checkin_history)
+    crew_result = sage_crew.analyze_developer(github_data, checkin_history, api_key=x_groq_key)
     
     # Store AI insights
     advice = models.AgentAdvice(
@@ -206,9 +248,9 @@ def analyze_github(github_username: str, db: Session = Depends(get_db)):
     )
     db.add(advice)
     
-    # Mark onboarding as complete
+    # Mark onboarding as complete in System DB
     user.onboarding_complete = True
-    db.commit()
+    system_db.commit()
     
     print(f"✅ Analysis complete for {github_username}")
     
@@ -219,8 +261,27 @@ def analyze_github(github_username: str, db: Session = Depends(get_db)):
     }
 
 @app.get("/github-analysis/{github_username}", response_model=GitHubAnalysisResponse)
-def get_github_analysis(github_username: str, db: Session = Depends(get_db)):
-    user = db.query(models.User).filter(
+def get_github_analysis(github_username: str, db: Session = Depends(get_user_db)):
+    # Note: We don't need to query User table here, as we are already in User DB context
+    # But we need the user_id for the query.
+    # In the new model, user_id is just an integer column in User DB.
+    # We need to find the user_id. 
+    # OPTION 1: Pass user_id from frontend? No.
+    # OPTION 2: Look up user in System DB to get ID? Yes.
+    # Actually, get_user_db dependency already verifies user exists in System DB.
+    # But it yields the User DB session.
+    # We need the user ID.
+    # Let's inject system_db as well to get the ID.
+    pass
+
+# Redefine with system_db injection
+@app.get("/github-analysis/{github_username}", response_model=GitHubAnalysisResponse)
+def get_github_analysis(
+    github_username: str, 
+    db: Session = Depends(get_user_db),
+    system_db: Session = Depends(get_system_db)
+):
+    user = system_db.query(models.User).filter(
         models.User.github_username == github_username
     ).first()
     
@@ -240,9 +301,11 @@ def get_github_analysis(github_username: str, db: Session = Depends(get_db)):
 def create_checkin(
     github_username: str,
     checkin: CheckInCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_user_db),
+    system_db: Session = Depends(get_system_db),
+    x_groq_key: Optional[str] = Header(None, alias="X-Groq-Key")
 ):
-    user = db.query(models.User).filter(
+    user = system_db.query(models.User).filter(
         models.User.github_username == github_username
     ).first()
     
@@ -266,7 +329,8 @@ def create_checkin(
             "commitment": checkin.commitment,
             "mood": checkin.mood
         },
-        history
+        history,
+        api_key=x_groq_key
     )
     
     new_checkin = models.CheckIn(
@@ -300,11 +364,13 @@ def create_checkin(
         "message": "Check-in recorded"
     }
 
-@app.patch("/checkins/{checkin_id}/evening")
+@app.patch("/checkins/{github_username}/{checkin_id}/evening")
 def evening_checkin(
+    github_username: str,
     checkin_id: int,
     update: CheckInUpdate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_user_db),
+    x_groq_key: Optional[str] = Header(None, alias="X-Groq-Key")
 ):
     checkin = db.query(models.CheckIn).filter(
         models.CheckIn.id == checkin_id
@@ -320,7 +386,8 @@ def evening_checkin(
     feedback = sage_crew.evening_checkin_review(
         checkin.commitment,
         update.shipped,
-        update.excuse
+        update.excuse,
+        api_key=x_groq_key
     )
     
     return {
@@ -332,9 +399,10 @@ def evening_checkin(
 def get_checkins(
     github_username: str,
     limit: int = 30,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_user_db),
+    system_db: Session = Depends(get_system_db)
 ):
-    user = db.query(models.User).filter(
+    user = system_db.query(models.User).filter(
         models.User.github_username == github_username
     ).first()
     
@@ -348,8 +416,13 @@ def get_checkins(
     return checkins
 
 @app.get("/advice/{github_username}", response_model=List[AgentAdviceResponse])
-def get_advice(github_username: str, limit: int = 20, db: Session = Depends(get_db)):
-    user = db.query(models.User).filter(
+def get_advice(
+    github_username: str, 
+    limit: int = 20, 
+    db: Session = Depends(get_user_db),
+    system_db: Session = Depends(get_system_db)
+):
+    user = system_db.query(models.User).filter(
         models.User.github_username == github_username
     ).first()
     
@@ -363,13 +436,17 @@ def get_advice(github_username: str, limit: int = 20, db: Session = Depends(get_
     return advice
 
 @app.get("/dashboard/{github_username}")
-def get_dashboard(github_username: str, db: Session = Depends(get_db)):
+def get_dashboard(
+    github_username: str, 
+    db: Session = Depends(get_user_db),
+    system_db: Session = Depends(get_system_db)
+):
     # Check cache first
     cached_data = get_cached_dashboard(github_username)
     if cached_data:
         return cached_data
     
-    user = db.query(models.User).filter(
+    user = system_db.query(models.User).filter(
         models.User.github_username == github_username
     ).first()
     
@@ -434,9 +511,11 @@ def get_dashboard(github_username: str, db: Session = Depends(get_db)):
 async def chat_with_mentor(
     github_username: str,
     message: ChatMessage,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_user_db),
+    system_db: Session = Depends(get_system_db),
+    x_groq_key: Optional[str] = Header(None, alias="X-Groq-Key")
 ):
-    user = db.query(models.User).filter(
+    user = system_db.query(models.User).filter(
         models.User.github_username == github_username
     ).first()
     
@@ -480,7 +559,8 @@ async def chat_with_mentor(
     deliberation = sage_crew.chat_deliberation(
         message.message,
         user_context,
-        message.context
+        message.context,
+        api_key=x_groq_key
     )
     
     advice = models.AgentAdvice(
@@ -506,10 +586,12 @@ async def chat_with_mentor(
 def create_life_decision(
     github_username: str,
     decision: LifeDecisionCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_user_db),
+    system_db: Session = Depends(get_system_db),
+    x_groq_key: Optional[str] = Header(None, alias="X-Groq-Key")
 ):
     """Create a new life decision and analyze it with AI"""
-    user = db.query(models.User).filter(
+    user = system_db.query(models.User).filter(
         models.User.github_username == github_username
     ).first()
     
@@ -537,7 +619,7 @@ def create_life_decision(
     
     print(f"📝 Life event created (ID: {life_event.id}), now analyzing...")
     
-    # NOW run AI analysis
+        # NOW run AI analysis
     try:
         analysis = sage_crew.analyze_life_decision(
             {
@@ -548,7 +630,8 @@ def create_life_decision(
                 "time_horizon": decision.time_horizon
             },
             user.id,
-            db
+            db,
+            api_key=x_groq_key
         )
         
         print(f"🤖 AI Analysis completed:")
@@ -602,10 +685,12 @@ def create_life_decision(
 def reanalyze_life_decision(
     github_username: str,
     decision_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_user_db),
+    system_db: Session = Depends(get_system_db),
+    x_groq_key: Optional[str] = Header(None, alias="X-Groq-Key")
 ):
     """Re-run AI analysis on an existing life decision"""
-    user = db.query(models.User).filter(
+    user = system_db.query(models.User).filter(
         models.User.github_username == github_username
     ).first()
     
@@ -635,7 +720,8 @@ def reanalyze_life_decision(
                 "time_horizon": life_event.time_horizon
             },
             user.id,
-            db
+            db,
+            api_key=x_groq_key
         )
         
         print(f"🤖 Re-analysis completed:")
@@ -672,10 +758,11 @@ def reanalyze_life_decision(
 def get_life_decisions(
     github_username: str,
     limit: int = 20,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_user_db),
+    system_db: Session = Depends(get_system_db)
 ):
     """Get all life decisions for a user"""
-    user = db.query(models.User).filter(
+    user = system_db.query(models.User).filter(
         models.User.github_username == github_username
     ).first()
     
@@ -713,10 +800,11 @@ def get_life_decisions(
 def get_life_decision_detail(
     github_username: str,
     decision_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_user_db),
+    system_db: Session = Depends(get_system_db)
 ):
     """Get detailed view of a specific life decision"""
-    user = db.query(models.User).filter(
+    user = system_db.query(models.User).filter(
         models.User.github_username == github_username
     ).first()
     
@@ -745,11 +833,14 @@ def get_life_decision_detail(
         "lessons_learned": context.get("lessons", [])
     }
 
-@app.post("/life-decisions/{decision_id}/evaluate")
+@app.post("/life-decisions/{github_username}/{decision_id}/evaluate")
 def evaluate_decision(
+    github_username: str,
     decision_id: int,
     evaluation: Dict,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_user_db),
+    system_db: Session = Depends(get_system_db),
+    x_groq_key: Optional[str] = Header(None, alias="X-Groq-Key")
 ):
     event = db.query(models.LifeEvent).filter(
         models.LifeEvent.id == decision_id
@@ -758,14 +849,15 @@ def evaluate_decision(
     if not event:
         raise HTTPException(status_code=404, detail="Decision not found")
     
-    user = db.query(models.User).filter(models.User.id == event.user_id).first()
+    user = system_db.query(models.User).filter(models.User.id == event.user_id).first()
     
     re_evaluation = sage_crew.reevaluate_decision(
         event,
         evaluation.get("current_situation", ""),
         evaluation.get("what_changed", ""),
         user.id,
-        db
+        db,
+        api_key=x_groq_key
     )
     
     if "re_evaluations" not in event.context:
@@ -789,14 +881,91 @@ def evaluate_decision(
 # Add this debug endpoint to main.py to inspect what's in the database
 
 @app.get("/debug/life-decisions/{github_username}")
-def debug_life_decisions(github_username: str, db: Session = Depends(get_db)):
+def debug_life_decisions(
+    github_username: str, 
+    db: Session = Depends(get_user_db),
+    system_db: Session = Depends(get_system_db)
+):
     """Debug endpoint to see raw life decision data"""
-    user = db.query(models.User).filter(
+    user = system_db.query(models.User).filter(
         models.User.github_username == github_username
     ).first()
     
     if not user:
         return {"error": "User not found"}
+    
+    return {
+        "life_decisions": [
+            {
+                "id": e.id,
+                "description": e.description,
+                "context": e.context
+            }
+            for e in user.life_events
+        ]
+    }
+
+class DatabaseConfig(BaseModel):
+    database_url: str
+
+@app.post("/config/database")
+def update_database_config(config: DatabaseConfig):
+    """Update the database URL in .env file"""
+    import re
+    import os
+    
+    # Basic validation
+    if not config.database_url.startswith("postgresql://") and not config.database_url.startswith("postgres://"):
+        raise HTTPException(status_code=400, detail="Invalid database URL. Must start with postgresql://")
+    
+    env_path = os.path.join(os.path.dirname(__file__), ".env")
+    
+    try:
+        # Read current .env
+        if os.path.exists(env_path):
+            with open(env_path, "r") as f:
+                content = f.read()
+        else:
+            content = ""
+            
+        # Update or add DATABASE_URL
+        if "DATABASE_URL=" in content:
+            content = re.sub(r"DATABASE_URL=.*", f"DATABASE_URL={config.database_url}", content)
+        else:
+            content += f"\nDATABASE_URL={config.database_url}\n"
+            
+        # Write back
+        with open(env_path, "w") as f:
+            f.write(content)
+            
+        return {"message": "Database configuration updated. Please restart the backend for changes to take effect."}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update configuration: {str(e)}")
+
+@app.patch("/users/{github_username}/config")
+def update_user_config(
+    github_username: str,
+    config: DatabaseConfig,
+    db: Session = Depends(get_system_db)
+):
+    """Update user's Neon Database URL"""
+    user = db.query(models.User).filter(
+        models.User.github_username == github_username
+    ).first()
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Validate URL
+    if not config.database_url.startswith("postgresql://") and not config.database_url.startswith("postgres://"):
+        raise HTTPException(status_code=400, detail="Invalid database URL. Must start with postgresql://")
+    
+    user.neon_db_url = config.database_url
+    db.commit()
+    db.refresh(user)
+    
+    return {"message": "Database configuration updated successfully"}
     
     events = db.query(models.LifeEvent).filter(
         models.LifeEvent.user_id == user.id
@@ -829,9 +998,13 @@ def debug_life_decisions(github_username: str, db: Session = Depends(get_db)):
 # ==================== COMMITMENT TRACKING ====================
 
 @app.get("/commitments/{github_username}/today")
-def get_today_commitment(github_username: str, db: Session = Depends(get_db)):
+def get_today_commitment(
+    github_username: str, 
+    db: Session = Depends(get_user_db),
+    system_db: Session = Depends(get_system_db)
+):
     """Get today's commitment if exists"""
-    user = db.query(models.User).filter(
+    user = system_db.query(models.User).filter(
         models.User.github_username == github_username
     ).first()
     
@@ -878,9 +1051,13 @@ def get_today_commitment(github_username: str, db: Session = Depends(get_db)):
 
 
 @app.get("/commitments/{github_username}/pending")
-def get_pending_commitments(github_username: str, db: Session = Depends(get_db)):
+def get_pending_commitments(
+    github_username: str, 
+    db: Session = Depends(get_user_db),
+    system_db: Session = Depends(get_system_db)
+):
     """Get all unreviewed commitments (past days not marked shipped/failed)"""
-    user = db.query(models.User).filter(
+    user = system_db.query(models.User).filter(
         models.User.github_username == github_username
     ).first()
     
@@ -910,11 +1087,12 @@ def get_pending_commitments(github_username: str, db: Session = Depends(get_db))
     }
 
 
-@app.post("/commitments/{checkin_id}/review")
+@app.post("/commitments/{github_username}/{checkin_id}/review")
 def review_commitment(
+    github_username: str,
     checkin_id: int,
     review: CheckInUpdate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_user_db)
 ):
     """Mark commitment as shipped or failed with excuse"""
     checkin = db.query(models.CheckIn).filter(
@@ -932,9 +1110,8 @@ def review_commitment(
     db.refresh(checkin)
     
     # Generate AI feedback on the excuse/success
-    user = db.query(models.User).filter(
-        models.User.id == checkin.user_id
-    ).first()
+    # Note: checkin.user_id is just an int now, not a relationship
+    # But we don't need the user object here, just the ID for queries
     
     # Get recent pattern
     recent_checkins = db.query(models.CheckIn).filter(
@@ -980,10 +1157,11 @@ def review_commitment(
 def get_commitment_stats(
     github_username: str,
     days: int = 30,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_user_db),
+    system_db: Session = Depends(get_system_db)
 ):
     """Get commitment statistics"""
-    user = db.query(models.User).filter(
+    user = system_db.query(models.User).filter(
         models.User.github_username == github_username
     ).first()
     
@@ -1108,9 +1286,13 @@ def get_weekly_breakdown(checkins: list) -> list:
 
 
 @app.get("/commitments/{github_username}/reminder-needed")
-def check_reminder_needed(github_username: str, db: Session = Depends(get_db)):
+def check_reminder_needed(
+    github_username: str, 
+    db: Session = Depends(get_user_db),
+    system_db: Session = Depends(get_system_db)
+):
     """Check if user needs a reminder (for notifications)"""
-    user = db.query(models.User).filter(
+    user = system_db.query(models.User).filter(
         models.User.github_username == github_username
     ).first()
     
@@ -1162,10 +1344,11 @@ def check_reminder_needed(github_username: str, db: Session = Depends(get_db)):
 @app.get("/commitments/{github_username}/weekly-summary")
 def get_weekly_summary(
     github_username: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_user_db),
+    system_db: Session = Depends(get_system_db)
 ):
     """Get week-by-week commitment summary with insights"""
-    user = db.query(models.User).filter(
+    user = system_db.query(models.User).filter(
         models.User.github_username == github_username
     ).first()
     
@@ -1232,10 +1415,11 @@ def get_weekly_summary(
 async def create_goal(
     github_username: str,
     goal: models.GoalCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_user_db),
+    system_db: Session = Depends(get_system_db)
 ):
     """Create a new life goal with AI analysis"""
-    user = db.query(models.User).filter(
+    user = system_db.query(models.User).filter(
         models.User.github_username == github_username
     ).first()
     
@@ -1356,10 +1540,11 @@ def get_goals(
     github_username: str,
     status: str = None,  # active, completed, paused, abandoned
     goal_type: str = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_user_db),
+    system_db: Session = Depends(get_system_db)
 ):
     """Get all goals for a user with optional filters"""
-    user = db.query(models.User).filter(
+    user = system_db.query(models.User).filter(
         models.User.github_username == github_username
     ).first()
     
@@ -1386,10 +1571,11 @@ def get_goals(
 @app.get("/goals/{github_username}/dashboard", response_model=GoalsDashboardResponse)
 def get_goals_dashboard(
     github_username: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_user_db),
+    system_db: Session = Depends(get_system_db)
 ):
     """Get comprehensive goals dashboard"""
-    user = db.query(models.User).filter(
+    user = system_db.query(models.User).filter(
         models.User.github_username == github_username
     ).first()
     
@@ -1464,10 +1650,11 @@ def get_goals_dashboard(
 def get_goal_detail(
     github_username: str,
     goal_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_user_db),
+    system_db: Session = Depends(get_system_db)
 ):
     """Get detailed view of a specific goal"""
-    user = db.query(models.User).filter(
+    user = system_db.query(models.User).filter(
         models.User.github_username == github_username
     ).first()
     
@@ -1493,10 +1680,11 @@ def update_goal(
     github_username: str,
     goal_id: int,
     update: models.GoalUpdateRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_user_db),
+    system_db: Session = Depends(get_system_db)
 ):
     """Update goal details"""
-    user = db.query(models.User).filter(
+    user = system_db.query(models.User).filter(
         models.User.github_username == github_username
     ).first()
     
@@ -1542,7 +1730,8 @@ def log_progress(
     github_username: str,
     goal_id: int,
     progress: models.GoalProgressCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_user_db),
+    system_db: Session = Depends(get_system_db)
 ):
     """Log progress update for a goal"""
     user = db.query(models.User).filter(
@@ -1616,7 +1805,8 @@ def get_progress_history(
     github_username: str,
     goal_id: int,
     limit: int = 20,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_user_db),
+    system_db: Session = Depends(get_system_db)
 ):
     """Get progress history for a goal"""
     user = db.query(models.User).filter(
@@ -1646,7 +1836,8 @@ def create_subgoal(
     github_username: str,
     goal_id: int,
     subgoal: models.SubGoalCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_user_db),
+    system_db: Session = Depends(get_system_db)
 ):
     """Add a subgoal to a goal"""
     user = db.query(models.User).filter(
@@ -1698,7 +1889,8 @@ def update_subgoal_status(
     goal_id: int,
     subgoal_id: int,
     status: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_user_db),
+    system_db: Session = Depends(get_system_db)
 ):
     """Update subgoal status"""
     user = db.query(models.User).filter(
@@ -1741,7 +1933,8 @@ def achieve_milestone(
     goal_id: int,
     milestone_id: int,
     celebration_note: str = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_user_db),
+    system_db: Session = Depends(get_system_db)
 ):
     """Mark a milestone as achieved"""
     user = db.query(models.User).filter(
@@ -1775,7 +1968,8 @@ def achieve_milestone(
 @app.get("/goals/{github_username}/weekly-review")
 def get_weekly_review(
     github_username: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_user_db),
+    system_db: Session = Depends(get_system_db)
 ):
     """Get weekly goals review with AI guidance"""
     user = db.query(models.User).filter(
@@ -1799,7 +1993,8 @@ def update_task_status(
     goal_id: int,
     task_id: int,
     status: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_user_db),
+    system_db: Session = Depends(get_system_db)
 ):
     """Update a single task's status"""
     user = db.query(models.User).filter(
@@ -1838,7 +2033,8 @@ def update_task_status(
 @app.get("/insights/{github_username}/weekly")
 def get_weekly_insights(
     github_username: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_user_db),
+    system_db: Session = Depends(get_system_db)
 ):
     """Get weekly insights and recommendations"""
     user = db.query(models.User).filter(
@@ -1863,7 +2059,8 @@ def get_notifications(
     github_username: str,
     unread_only: bool = False,
     limit: int = 50,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_user_db),
+    system_db: Session = Depends(get_system_db)
 ):
     """Get notifications for a user"""
     user = db.query(models.User).filter(
@@ -1893,7 +2090,8 @@ def get_notifications(
 @app.get("/notifications/{github_username}/stats", response_model=NotificationStats)
 def get_notification_stats(
     github_username: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_user_db),
+    system_db: Session = Depends(get_system_db)
 ):
     """Get notification statistics"""
     user = db.query(models.User).filter(
@@ -1942,7 +2140,8 @@ def get_notification_stats(
 def mark_notification_read(
     github_username: str,
     notification_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_user_db),
+    system_db: Session = Depends(get_system_db)
 ):
     """Mark a notification as read"""
     user = db.query(models.User).filter(
@@ -1970,7 +2169,8 @@ def mark_notification_read(
 @app.post("/notifications/{github_username}/mark-all-read")
 def mark_all_notifications_read(
     github_username: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_user_db),
+    system_db: Session = Depends(get_system_db)
 ):
     """Mark all notifications as read"""
     user = db.query(models.User).filter(
@@ -1997,7 +2197,8 @@ def mark_all_notifications_read(
 def delete_notification(
     github_username: str,
     notification_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_user_db),
+    system_db: Session = Depends(get_system_db)
 ):
     """Delete a notification"""
     user = db.query(models.User).filter(
@@ -2024,7 +2225,8 @@ def delete_notification(
 @app.post("/notifications/{github_username}/check")
 def check_and_create_notifications(
     github_username: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_user_db),
+    system_db: Session = Depends(get_system_db)
 ):
     """Manually trigger notification checks (useful for testing or manual refresh)"""
     user = db.query(models.User).filter(
@@ -2042,7 +2244,8 @@ def check_and_create_notifications(
 def get_stats_comparison(
     github_username: str,
     days: int = 7,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_user_db),
+    system_db: Session = Depends(get_system_db)
 ):
     """Get current and previous period stats for comparison"""
     user = db.query(models.User).filter(
@@ -2093,10 +2296,11 @@ def get_stats_comparison(
 async def create_action_plan(
     github_username: str,
     plan: ActionPlanCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_user_db),
+    system_db: Session = Depends(get_system_db)
 ):
     """Create a new 30-day action plan with AI"""
-    user = db.query(models.User).filter(
+    user = system_db.query(models.User).filter(
         models.User.github_username == github_username
     ).first()
     
@@ -2184,7 +2388,8 @@ async def create_action_plan(
 def get_action_plans(
     github_username: str,
     status: str = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_user_db),
+    system_db: Session = Depends(get_system_db)
 ):
     """Get all action plans for user"""
     user = db.query(models.User).filter(
@@ -2211,7 +2416,8 @@ def get_action_plans(
 def get_action_plan_detail(
     github_username: str,
     plan_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_user_db),
+    system_db: Session = Depends(get_system_db)
 ):
     """Get detailed action plan"""
     user = db.query(models.User).filter(
@@ -2238,7 +2444,8 @@ def get_action_plan_detail(
 def get_today_tasks(
     github_username: str,
     plan_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_user_db),
+    system_db: Session = Depends(get_system_db)
 ):
     """Get today's tasks from action plan"""
     user = db.query(models.User).filter(
@@ -2277,7 +2484,8 @@ def complete_daily_task(
     plan_id: int,
     task_id: int,
     update: DailyTaskUpdate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_user_db),
+    system_db: Session = Depends(get_system_db)
 ):
     """Mark task as complete and get AI feedback"""
     user = db.query(models.User).filter(
@@ -2335,7 +2543,8 @@ def complete_daily_task(
 def advance_to_next_day(
     github_username: str,
     plan_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_user_db),
+    system_db: Session = Depends(get_system_db)
 ):
     """Move to next day in plan"""
     user = db.query(models.User).filter(
@@ -2404,7 +2613,8 @@ def advance_to_next_day(
 def log_skill_focus(
     github_username: str,
     focus: SkillFocusCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_user_db),
+    system_db: Session = Depends(get_system_db)
 ):
     """Log time spent on a skill"""
     user = db.query(models.User).filter(
@@ -2440,7 +2650,8 @@ def log_skill_focus(
 def get_skill_focus_summary(
     github_username: str,
     days: int = 7,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_user_db),
+    system_db: Session = Depends(get_system_db)
 ):
     """Get summary of skill focus time"""
     user = db.query(models.User).filter(
@@ -2487,7 +2698,8 @@ def get_skill_focus_summary(
 def create_skill_reminder(
     github_username: str,
     reminder: SkillReminderCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_user_db),
+    system_db: Session = Depends(get_system_db)
 ):
     """Create a skill focus reminder"""
     user = db.query(models.User).filter(
@@ -2525,7 +2737,8 @@ def create_skill_reminder(
 def get_skill_reminders(
     github_username: str,
     active_only: bool = True,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_user_db),
+    system_db: Session = Depends(get_system_db)
 ):
     """Get all skill reminders"""
     user = db.query(models.User).filter(
@@ -2549,7 +2762,8 @@ def get_skill_reminders(
 def start_pomodoro_session(
     github_username: str,
     session: models.PomodoroSessionCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_user_db),
+    system_db: Session = Depends(get_system_db)
 ):
     """Start a new Pomodoro session"""
     user = db.query(models.User).filter(
@@ -2593,7 +2807,8 @@ def start_pomodoro_session(
 @app.get("/pomodoro/{github_username}/active")
 def get_active_session(
     github_username: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_user_db),
+    system_db: Session = Depends(get_system_db)
 ):
     """Get current active Pomodoro session"""
     user = db.query(models.User).filter(
@@ -2622,7 +2837,8 @@ def complete_pomodoro_session(
     github_username: str,
     session_id: int,
     update: models.PomodoroSessionUpdate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_user_db),
+    system_db: Session = Depends(get_system_db)
 ):
     """Complete a Pomodoro session"""
     user = db.query(models.User).filter(
@@ -2659,7 +2875,8 @@ def complete_pomodoro_session(
 def pause_pomodoro_session(
     github_username: str,
     session_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_user_db),
+    system_db: Session = Depends(get_system_db)
 ):
     """Pause a Pomodoro session"""
     user = db.query(models.User).filter(
@@ -2687,7 +2904,8 @@ def pause_pomodoro_session(
 def resume_pomodoro_session(
     github_username: str,
     session_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_user_db),
+    system_db: Session = Depends(get_system_db)
 ):
     """Resume a paused Pomodoro session"""
     user = db.query(models.User).filter(
@@ -2715,7 +2933,8 @@ def resume_pomodoro_session(
 def get_pomodoro_stats(
     github_username: str,
     days: int = 30,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_user_db),
+    system_db: Session = Depends(get_system_db)
 ):
     """Get Pomodoro statistics"""
     user = db.query(models.User).filter(
@@ -2765,7 +2984,8 @@ def get_pomodoro_stats(
 def get_pomodoro_history(
     github_username: str,
     limit: int = 50,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_user_db),
+    system_db: Session = Depends(get_system_db)
 ):
     """Get Pomodoro session history"""
     user = db.query(models.User).filter(
@@ -2828,7 +3048,11 @@ def calculate_pomodoro_streaks(user_id: int, db: Session) -> tuple:
     return current_streak, best_streak
 
 @app.get("/commitments/{github_username}/streak-detailed")
-def get_detailed_streak(github_username: str, db: Session = Depends(get_db)):
+def get_detailed_streak(
+    github_username: str, 
+    db: Session = Depends(get_user_db),
+    system_db: Session = Depends(get_system_db)
+):
     """Get detailed streak information based on daily check-ins"""
     user = db.query(models.User).filter(
         models.User.github_username == github_username

@@ -1,104 +1,99 @@
-from sqlalchemy import create_engine, event, text # Import 'text'
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy import create_engine, event, text, Engine
+from sqlalchemy.orm import declarative_base, sessionmaker
 from sqlalchemy.pool import QueuePool
 import os
 from dotenv import load_dotenv
 import logging
 
+# Load environment variables
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL")
+# --- Configuration ---
+# Neon/Postgres requires 'postgresql://', but dashboard often gives 'postgres://'
+def fix_db_url(url: str) -> str:
+    if url and url.startswith("postgres://"):
+        return url.replace("postgres://", "postgresql://", 1)
+    return url
 
-if not DATABASE_URL:
-    # If DATABASE_URL is not set, default to local SQLite for development
-    DATABASE_URL = "sqlite:///./sage.db"
-    print("⚠️ WARNING: DATABASE_URL not set. Falling back to SQLite.")
+# --- System Database (Local/Internal or Neon) ---
+# You can set this to a Neon URL in .env if you want the System DB on Neon too
+SYSTEM_DATABASE_URL = fix_db_url(os.getenv("SYSTEM_DATABASE_URL", "sqlite:///./sage.db"))
 
-# Production-grade connection pooling
-engine = create_engine(
-    DATABASE_URL,
-    poolclass=QueuePool,
-    pool_size=20,  # Increased for production
-    max_overflow=40,  # Allow more overflow connections
-    pool_pre_ping=True,  # Verify connections
-    pool_recycle=3600,  # Recycle after 1 hour
-    pool_timeout=30,  # Wait up to 30s for connection
-    echo=False,  # Disable SQL logging in production
-    connect_args={
-        "connect_timeout": 10,
-        # REMOVED: "options": "-c statement_timeout=30000" as it is unsupported by Neon.tech connection pooler
+def get_system_engine_args(url):
+    if url.startswith("sqlite"):
+        return {"connect_args": {"check_same_thread": False}}
+    
+    # Args for Neon/Postgres
+    return {
+        "pool_size": 5,
+        "max_overflow": 10,
+        "pool_pre_ping": True, # Vital for Neon serverless (disconnects idle)
+        "pool_recycle": 300,
+        "connect_args": {
+            "sslmode": "require",
+            "connect_timeout": 10
+        }
     }
-)
 
-# Add connection pool logging
-logging.basicConfig()
-logging.getLogger('sqlalchemy.pool').setLevel(logging.INFO)
+system_engine = create_engine(SYSTEM_DATABASE_URL, **get_system_engine_args(SYSTEM_DATABASE_URL))
+SystemSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=system_engine)
+SystemBase = declarative_base()
 
-# Optimize PostgreSQL settings for each connection
-@event.listens_for(engine, "connect")
-def receive_connect(dbapi_conn, connection_record):
-    # Only run for PostgreSQL connections
-    if engine.url.drivername.startswith("postgresql"):
-        cursor = dbapi_conn.cursor()
-        # Set optimal work_mem for this connection
-        cursor.execute("SET work_mem = '64MB'")
-        # Enable JIT compilation for complex queries
-        cursor.execute("SET jit = on")
-        cursor.close()
-
-SessionLocal = sessionmaker(
-    autocommit=False, 
-    autoflush=False, 
-    bind=engine,
-    expire_on_commit=False  # Better for read-heavy workloads
-)
-
-Base = declarative_base()
-
-def get_db():
-    db = SessionLocal()
+def get_system_db():
+    db = SystemSessionLocal()
     try:
         yield db
     finally:
         db.close()
 
-def init_db():
-    """Initialize database tables with indexes"""
-    Base.metadata.create_all(bind=engine)
-    
-    # Create additional indexes for performance
-    with engine.connect() as conn:
-        # Index for checkins by user and timestamp
-        conn.execute(text("""
-            CREATE INDEX IF NOT EXISTS idx_checkins_user_timestamp 
-            ON checkins(user_id, timestamp DESC)
-        """))
-        
-        # Index for goals by user and status
-        conn.execute(text("""
-            CREATE INDEX IF NOT EXISTS idx_goals_user_status 
-            ON goals(user_id, status)
-        """))
-        
-        # Index for notifications by user and read status
-        conn.execute(text("""
-            CREATE INDEX IF NOT EXISTS idx_notifications_user_read 
-            ON notifications(user_id, read, created_at DESC)
-        """))
-        
-        conn.commit()
-    
-    print("✓ Database tables and indexes created successfully")
+def init_system_db():
+    """Initialize system database tables"""
+    SystemBase.metadata.create_all(bind=system_engine)
+    print("✓ System database initialized")
 
-# Health check function
-def check_db_health():
-    """Check database connection health"""
+# --- User Database (Dynamic/Neon) ---
+UserBase = declarative_base()
+
+def get_user_db_engine(database_url: str):
+    """Create a dynamic engine for the user's Neon database"""
+    if not database_url:
+        raise ValueError("Database URL is required")
+    
+    # Fix protocol for SQLAlchemy
+    clean_url = fix_db_url(database_url)
+        
+    connect_args = {}
+    # Neon requires SSL
+    if clean_url.startswith("postgresql"):
+        connect_args = {
+            "connect_timeout": 10,
+            "sslmode": "require"
+        }
+
+    return create_engine(
+        clean_url,
+        poolclass=QueuePool,
+        pool_size=10,         # Keep active connections low for serverless
+        max_overflow=20,      # Allow bursts
+        pool_pre_ping=True,   # CRITICAL: Checks if connection is alive before using
+        pool_recycle=1800,    # Recycle connections every 30 mins
+        connect_args=connect_args
+    )
+
+# --- Optimizations ---
+
+# Optimize PostgreSQL settings for user connections
+@event.listens_for(Engine, "connect")
+def receive_connect(dbapi_conn, connection_record):
     try:
-        with engine.connect() as conn:
-            # FIX: Use text() for simple SELECT queries as well
-            conn.execute(text("SELECT 1"))
-        return True
+        # Only run this for Postgres connections (Neon)
+        if hasattr(dbapi_conn, 'info') and hasattr(dbapi_conn.info, 'dbname'):
+             with dbapi_conn.cursor() as cursor:
+                # Optimize for analytical/agent workloads
+                cursor.execute("SET work_mem = '64MB'")
+                cursor.execute("SET jit = on")
+                # Optional: Set statement timeout to prevent hanging queries
+                cursor.execute("SET statement_timeout = '60s'")
     except Exception as e:
-        logging.error(f"Database health check failed: {e}")
-        return False
+        # Fail silently for SQLite or if permissions are denied
+        pass

@@ -9,7 +9,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
 interface CommitmentDay {
   date: string // Assuming 'YYYY-MM-DD' or similar parseable format
-  commitment: string
+  commitment: string | null
   shipped: boolean | null // null means pending/not reviewed
   energy: number
 }
@@ -53,35 +53,35 @@ export default function CommitmentCalendar({ githubUsername }: CommitmentCalenda
       console.error('Failed to load calendar:', error)
       setError('Could not load calendar data.'); // Set error message
     } finally {
-        setLoading(false)
+      setLoading(false)
     }
   }
 
   // Helper function to generate a grid representing the last ~4 weeks
   const generateCalendarGrid = (fetchedDays: CommitmentDay[]) => {
-      const grid: (CommitmentDay | { date: string, commitment: null, shipped: null, energy: 0 })[] = [];
-      const endDate = new Date();
-      // Start 4 weeks before the *end* of the current week to align grid nicely
-      const daysSinceSunday = endDate.getDay(); // 0 for Sunday, 6 for Saturday
-      const startDate = new Date(endDate);
-      startDate.setDate(endDate.getDate() - daysSinceSunday - (3 * 7)); // Start 3 full weeks before this Sunday
-      startDate.setHours(0, 0, 0, 0);
+    const grid: (CommitmentDay | { date: string, commitment: null, shipped: null, energy: 0 })[] = [];
+    const endDate = new Date();
+    // Start 4 weeks before the *end* of the current week to align grid nicely
+    const daysSinceSunday = endDate.getDay(); // 0 for Sunday, 6 for Saturday
+    const startDate = new Date(endDate);
+    startDate.setDate(endDate.getDate() - daysSinceSunday - (3 * 7)); // Start 3 full weeks before this Sunday
+    startDate.setHours(0, 0, 0, 0);
 
-      const fetchedDaysMap = new Map(fetchedDays.map(d => [d.date, d]));
+    const fetchedDaysMap = new Map(fetchedDays.map(d => [d.date, d]));
 
-      for (let i = 0; i < 28; i++) { // Generate exactly 28 days for 4 full weeks
-          const currentDate = new Date(startDate);
-          currentDate.setDate(startDate.getDate() + i);
-          const dateString = currentDate.toISOString().split('T')[0];
+    for (let i = 0; i < 28; i++) { // Generate exactly 28 days for 4 full weeks
+      const currentDate = new Date(startDate);
+      currentDate.setDate(startDate.getDate() + i);
+      const dateString = currentDate.toISOString().split('T')[0];
 
-          if (fetchedDaysMap.has(dateString)) {
-              grid.push(fetchedDaysMap.get(dateString)!);
-          } else {
-              // Add placeholder for days with no data within the range
-              grid.push({ date: dateString, commitment: null, shipped: null, energy: 0 });
-          }
+      if (fetchedDaysMap.has(dateString)) {
+        grid.push(fetchedDaysMap.get(dateString)!);
+      } else {
+        // Add placeholder for days with no data within the range
+        grid.push({ date: dateString, commitment: null, shipped: null, energy: 0 });
       }
-      return grid;
+    }
+    return grid;
   };
 
 
@@ -93,7 +93,7 @@ export default function CommitmentCalendar({ githubUsername }: CommitmentCalenda
   }
 
   // Function to return background based on shipped status for the calendar day square
-   const getDayBgClass = (shipped: boolean | null, commitmentExists: boolean) => {
+  const getDayBgClass = (shipped: boolean | null, commitmentExists: boolean) => {
     if (!commitmentExists) return 'bg-[#000000]/30'; // Darker for empty days
     if (shipped === true) return 'bg-green-800/40 hover:bg-green-700/50'; // Green tint
     if (shipped === false) return 'bg-red-800/40 hover:bg-red-700/50'; // Red tint
@@ -101,14 +101,14 @@ export default function CommitmentCalendar({ githubUsername }: CommitmentCalenda
   }
 
   return (
-     // Main container: Raisin Black background, Floral White text
-     <div className="bg-[#242424] border border-[#242424]/50 rounded-2xl shadow-xl p-6 text-[#FBFAEE]">
+    // Main container: Raisin Black background, Floral White text
+    <div className="bg-[#242424] border border-[#242424]/50 rounded-2xl shadow-xl p-6 text-[#FBFAEE]">
       {/* Header */}
       <div className="flex items-center mb-6">
-         {/* Icon with Purple Gradient */}
-         <div className="bg-gradient-to-br from-[#933DC9] to-[#53118F] p-2 rounded-lg mr-3 shadow-md">
-            <Calendar className="w-5 h-5 text-[#FBFAEE]" />
-         </div>
+        {/* Icon with Purple Gradient */}
+        <div className="bg-gradient-to-br from-[#933DC9] to-[#53118F] p-2 rounded-lg mr-3 shadow-md">
+          <Calendar className="w-5 h-5 text-[#FBFAEE]" />
+        </div>
         <h3 className="text-xl font-bold text-[#FBFAEE]">Commitment Calendar</h3>
         <span className="ml-2 text-xs text-[#FBFAEE]/60">(Last 4 Weeks)</span>
       </div>
@@ -121,19 +121,19 @@ export default function CommitmentCalendar({ githubUsername }: CommitmentCalenda
         </div>
       )}
 
-       {/* Error State */}
-       {!loading && error && (
-          <div className="text-center py-12 text-red-400 flex flex-col items-center">
-             <AlertCircle className="w-8 h-8 mb-2"/>
-             <span>{error}</span>
-              <button
-                  onClick={loadCalendarData}
-                  className="mt-4 px-4 py-1 bg-[#933DC9] text-[#FBFAEE] rounded-md text-sm hover:bg-[#7d34ad] transition"
-              >
-                  Retry
-              </button>
-          </div>
-       )}
+      {/* Error State */}
+      {!loading && error && (
+        <div className="text-center py-12 text-red-400 flex flex-col items-center">
+          <AlertCircle className="w-8 h-8 mb-2" />
+          <span>{error}</span>
+          <button
+            onClick={loadCalendarData}
+            className="mt-4 px-4 py-1 bg-[#933DC9] text-[#FBFAEE] rounded-md text-sm hover:bg-[#7d34ad] transition"
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
 
       {/* Calendar Grid */}
@@ -141,57 +141,57 @@ export default function CommitmentCalendar({ githubUsername }: CommitmentCalenda
         <div className="grid grid-cols-7 gap-1.5 md:gap-2">
           {/* Optional: Add weekday headers */}
           {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-              <div key={day} className="text-center text-xs text-[#FBFAEE]/50 pb-1">{day}</div>
+            <div key={day} className="text-center text-xs text-[#FBFAEE]/50 pb-1">{day}</div>
           ))}
 
           {days.map((day, idx) => {
-              const commitmentExists = day.commitment !== null;
-              const dateObj = new Date(day.date + 'T00:00:00'); // Ensure correct date parsing
+            const commitmentExists = day.commitment !== null;
+            const dateObj = new Date(day.date + 'T00:00:00'); // Ensure correct date parsing
 
-              // Tooltip text
-              const tooltip = commitmentExists
-                  ? `${dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}: ${day.commitment}`
-                  : `${dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}: No commitment`;
+            // Tooltip text
+            const tooltip = commitmentExists
+              ? `${dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}: ${day.commitment}`
+              : `${dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}: No commitment`;
 
-              return (
-                  <div
-                      key={idx}
-                      className={`aspect-square ${getDayBgClass(day.shipped, commitmentExists)} border border-[#242424]/30 rounded-md flex flex-col items-center justify-center p-1 transition duration-150 group cursor-pointer relative`}
-                      title={tooltip} // Use native title for simple tooltip
-                  >
-                      {/* Day Number */}
-                      <span className={`text-xs absolute top-1 right-1 ${commitmentExists ? 'text-[#FBFAEE]/60' : 'text-[#FBFAEE]/30'}`}>
-                          {dateObj.getDate()}
-                      </span>
-                      {/* Icon (only if commitment exists) */}
-                      {commitmentExists && (
-                          <div className="mt-1">
-                             {getDayIcon(day.shipped)}
-                          </div>
-                      )}
-
-                      {/* Optional: Show energy level visually */}
-                      {commitmentExists && day.energy > 0 && (
-                          <div className="absolute bottom-1 left-1 right-1 h-0.5 rounded-full overflow-hidden bg-[#000000]/30">
-                              <div
-                                  className={`h-full ${day.energy <= 3 ? 'bg-red-500' : day.energy <= 6 ? 'bg-yellow-500' : 'bg-green-500'}`}
-                                  style={{ width: `${day.energy * 10}%` }}
-                                  title={`Energy: ${day.energy}/10`}
-                              ></div>
-                          </div>
-                      )}
+            return (
+              <div
+                key={idx}
+                className={`aspect-square ${getDayBgClass(day.shipped, commitmentExists)} border border-[#242424]/30 rounded-md flex flex-col items-center justify-center p-1 transition duration-150 group cursor-pointer relative`}
+                title={tooltip} // Use native title for simple tooltip
+              >
+                {/* Day Number */}
+                <span className={`text-xs absolute top-1 right-1 ${commitmentExists ? 'text-[#FBFAEE]/60' : 'text-[#FBFAEE]/30'}`}>
+                  {dateObj.getDate()}
+                </span>
+                {/* Icon (only if commitment exists) */}
+                {commitmentExists && (
+                  <div className="mt-1">
+                    {getDayIcon(day.shipped)}
                   </div>
-              );
+                )}
+
+                {/* Optional: Show energy level visually */}
+                {commitmentExists && day.energy > 0 && (
+                  <div className="absolute bottom-1 left-1 right-1 h-0.5 rounded-full overflow-hidden bg-[#000000]/30">
+                    <div
+                      className={`h-full ${day.energy <= 3 ? 'bg-red-500' : day.energy <= 6 ? 'bg-yellow-500' : 'bg-green-500'}`}
+                      style={{ width: `${day.energy * 10}%` }}
+                      title={`Energy: ${day.energy}/10`}
+                    ></div>
+                  </div>
+                )}
+              </div>
+            );
           })}
         </div>
       )}
 
-       {/* Empty state after loading */}
-       {!loading && !error && days.length === 0 && (
-            <div className="text-center py-12 text-[#FBFAEE]/60">
-               No commitment data found for the last month.
-            </div>
-       )}
+      {/* Empty state after loading */}
+      {!loading && !error && days.length === 0 && (
+        <div className="text-center py-12 text-[#FBFAEE]/60">
+          No commitment data found for the last month.
+        </div>
+      )}
 
 
       {/* Legend */}
@@ -209,11 +209,11 @@ export default function CommitmentCalendar({ githubUsername }: CommitmentCalenda
           <span>Pending/None</span>
         </div>
         <div className="flex items-center text-xs">
-            <span className="w-3 h-1.5 bg-red-500 rounded-l"></span>
-            <span className="w-3 h-1.5 bg-yellow-500"></span>
-            <span className="w-3 h-1.5 bg-green-500 rounded-r mr-1"></span>
-            <span>Energy</span>
-        </div> 
+          <span className="w-3 h-1.5 bg-red-500 rounded-l"></span>
+          <span className="w-3 h-1.5 bg-yellow-500"></span>
+          <span className="w-3 h-1.5 bg-green-500 rounded-r mr-1"></span>
+          <span>Energy</span>
+        </div>
       </div>
     </div>
   )

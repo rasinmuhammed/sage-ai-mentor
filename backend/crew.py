@@ -1,5 +1,5 @@
 from crewai import Task, Crew, Process
-from agents import analyst, psychologist, strategist, contrarian
+from agents import create_agents, get_agents
 from typing import Dict, List
 import json
 import models
@@ -7,15 +7,48 @@ from datetime import datetime
 import io
 import sys
 
+from agents import create_agents, get_agents
+
 class SageMentorCrew:
-    def __init__(self):
-        self.analyst = analyst
-        self.psychologist = psychologist
-        self.strategist = strategist
-        self.contrarian = contrarian
+    def __init__(self, api_key: str = None):
+        # If api_key is provided, create new agents. 
+        # Otherwise try to get default agents (which might be None if no env var)
+        if api_key:
+            agents = create_agents(api_key)
+        else:
+            # Fallback to default agents (from env vars)
+            # If even those aren't set, we'll handle it when methods are called
+            try:
+                agents = get_agents()
+            except:
+                agents = None
+
+        if agents:
+            self.analyst = agents["analyst"]
+            self.psychologist = agents["psychologist"]
+            self.strategist = agents["strategist"]
+            self.contrarian = agents["contrarian"]
+        else:
+            # Initialize as None, will need to be set later or raise error
+            self.analyst = None
+            self.psychologist = None
+            self.strategist = None
+            self.contrarian = None
+            
+    def _ensure_agents(self, api_key: str = None):
+        """Ensure agents are initialized, creating them if key provided"""
+        if api_key:
+            agents = create_agents(api_key)
+            self.analyst = agents["analyst"]
+            self.psychologist = agents["psychologist"]
+            self.strategist = agents["strategist"]
+            self.contrarian = agents["contrarian"]
+        elif not self.analyst:
+             raise ValueError("Agents not initialized. Please provide GROQ_API_KEY.")
     
-    def analyze_developer(self, github_data: Dict, checkin_history: List[Dict] = None) -> Dict:
+    def analyze_developer(self, github_data: Dict, checkin_history: List[Dict] = None, api_key: str = None) -> Dict:
         """Main analysis flow: All agents deliberate on the developer's situation"""
+        self._ensure_agents(api_key)
         
         context = self._prepare_context(github_data, checkin_history)
         
@@ -100,8 +133,9 @@ class SageMentorCrew:
         finally:
             sys.stdout = old_stdout
     
-    def chat_deliberation(self, user_message: str, user_context: Dict, additional_context: Dict = None) -> Dict:
+    def chat_deliberation(self, user_message: str, user_context: Dict, additional_context: Dict = None, api_key: str = None) -> Dict:
         """Multi-agent deliberation for chat messages with raw output"""
+        self._ensure_agents(api_key)
         
         self.raw_output = []  # Reset raw output
         
@@ -255,8 +289,9 @@ class SageMentorCrew:
         
         return contributions
     
-    def analyze_life_decision(self, decision: Dict, user_id: int, db) -> Dict:
+    def analyze_life_decision(self, decision: Dict, user_id: int, db, api_key: str = None) -> Dict:
         """Analyze a major life decision"""
+        self._ensure_agents(api_key)
         
         past_decisions = db.query(models.LifeEvent).filter(
             models.LifeEvent.user_id == user_id
@@ -315,8 +350,9 @@ class SageMentorCrew:
             "long_term_impact": "Use this decision as a reference point for future choices"
         }
     
-    def reevaluate_decision(self, original_event, current_situation: str, what_changed: str, user_id: int, db) -> Dict:
+    def reevaluate_decision(self, original_event, current_situation: str, what_changed: str, user_id: int, db, api_key: str = None) -> Dict:
         """Re-evaluate a past decision with hindsight"""
+        self._ensure_agents(api_key)
         
         reevaluation_task = Task(
             description=f"""Re-evaluate this past decision with hindsight:
@@ -370,8 +406,9 @@ class SageMentorCrew:
             "how_it_aged": aging
         }
     
-    def quick_checkin_analysis(self, checkin_data: Dict, user_history: Dict) -> Dict:
+    def quick_checkin_analysis(self, checkin_data: Dict, user_history: Dict, api_key: str = None) -> Dict:
         """Quick analysis for daily check-ins"""
+        self._ensure_agents(api_key)
         
         checkin_task = Task(
             description=f"""Analyze this daily check-in:
@@ -406,8 +443,9 @@ class SageMentorCrew:
         result = crew.kickoff()
         return {"analysis": str(result)}
     
-    def evening_checkin_review(self, morning_commitment: str, shipped: bool, excuse: str = None) -> Dict:
+    def evening_checkin_review(self, morning_commitment: str, shipped: bool, excuse: str = None, api_key: str = None) -> Dict:
         """Review whether user followed through on morning commitment"""
+        self._ensure_agents(api_key)
         
         review_task = Task(
             description=f"""Review this day's outcome:
@@ -497,8 +535,9 @@ class SageMentorCrew:
         
         return actions[:3]
     
-    def analyze_goal(self, goal_data: Dict, user_context: Dict, db) -> Dict:
+    def analyze_goal(self, goal_data: Dict, user_context: Dict, db, api_key: str = None) -> Dict:
         """Comprehensive AI analysis of a life goal"""
+        self._ensure_agents(api_key)
         
         context_str = f"""
         Goal Details:
@@ -700,8 +739,9 @@ class SageMentorCrew:
         else:
             return "3-6 months"  # Default
     
-    def analyze_goal_progress(self, goal, progress_data: Dict, user_id: int, db) -> Dict:
+    def analyze_goal_progress(self, goal, progress_data: Dict, user_id: int, db, api_key: str = None) -> Dict:
         """Analyze progress update on a goal"""
+        self._ensure_agents(api_key)
         
         # Get recent progress logs
         recent_logs = db.query(models.GoalProgress).filter(
