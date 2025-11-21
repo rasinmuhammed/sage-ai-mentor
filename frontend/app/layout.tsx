@@ -2,7 +2,9 @@ import type { Metadata } from 'next'
 import { ClerkProvider } from '@clerk/nextjs'
 import { dark } from '@clerk/themes'
 import './globals.css'
-import { ErrorBoundary, ToastProvider } from '@/components/ErrorBoundary' 
+import { ToastProvider } from '@/components/ErrorBoundary'
+import GlobalErrorBoundary from '@/components/GlobalErrorBoundary'
+import Providers from './providers'
 
 export const metadata: Metadata = {
   // Brand Consistency: Renaming from 'Reflog - Your AI Mentor' to 'Reflog AI Mentor'
@@ -26,7 +28,7 @@ export default function RootLayout({
           colorInputText: '#FBFAEE',
         },
         elements: {
-          formButtonPrimary: 
+          formButtonPrimary:
             'bg-gradient-to-r from-[#933DC9] to-[#53118F] hover:brightness-110',
           card: 'bg-[#242424] border border-[#242424]/60',
           headerTitle: 'text-[#FBFAEE]',
@@ -36,11 +38,13 @@ export default function RootLayout({
     >
       <html lang="en">
         <body>
-          <ErrorBoundary>
-            <ToastProvider>
-              {children}
-            </ToastProvider>
-          </ErrorBoundary>
+          <GlobalErrorBoundary>
+            <Providers>
+              <ToastProvider>
+                {children}
+              </ToastProvider>
+            </Providers>
+          </GlobalErrorBoundary>
         </body>
       </html>
     </ClerkProvider>

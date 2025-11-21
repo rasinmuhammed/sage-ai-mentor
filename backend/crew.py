@@ -6,6 +6,9 @@ import models
 from datetime import datetime
 import io
 import sys
+import asyncio
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from agents import create_agents, get_agents
 
@@ -46,7 +49,7 @@ class SageMentorCrew:
         elif not self.analyst:
              raise ValueError("Agents not initialized. Please provide GROQ_API_KEY.")
     
-    def analyze_developer(self, github_data: Dict, checkin_history: List[Dict] = None, api_key: str = None) -> Dict:
+    async def analyze_developer(self, github_data: Dict, checkin_history: List[Dict] = None, api_key: str = None) -> Dict:
         """Main analysis flow: All agents deliberate on the developer's situation"""
         self._ensure_agents(api_key)
         
@@ -115,7 +118,7 @@ class SageMentorCrew:
             verbose=True
         )
         
-        result = crew.kickoff()
+        result = await asyncio.to_thread(crew.kickoff)
         
         return self._structure_output(result, github_data)
     
@@ -133,21 +136,8 @@ class SageMentorCrew:
         finally:
             sys.stdout = old_stdout
     
-    def chat_deliberation(self, user_message: str, user_context: Dict, additional_context: Dict = None, api_key: str = None) -> Dict:
-        """Multi-agent deliberation for chat messages with raw output"""
-        self._ensure_agents(api_key)
-        
-        self.raw_output = []  # Reset raw output
-        
-        context_str = f"""
-        User Context:
-        - GitHub: {user_context['github']}
-        - Recent Performance: {user_context['recent_performance']}
-        - Life Decisions: {user_context['life_decisions']}
-
-        Additional Context: {additional_context if additional_context else 'None'}
-        """
-        
+    def _create_chat_tasks(self, user_message: str, context_str: str):
+        """Create tasks for chat deliberation"""
         analyst_task = Task(
             description=f"""Analyze this user's question from a data perspective:
             
@@ -218,15 +208,149 @@ class SageMentorCrew:
             context=[analyst_task, psychologist_task, contrarian_task]
         )
         
+        # If the user is asking for a plan, we want structured output
+        if "plan" in user_message.lower() or "roadmap" in user_message.lower() or "learn" in user_message.lower():
+            strategist_task.description += """
+            
+            IMPORTANT: If you are proposing a specific learning plan or project, output a JSON block at the end of your response like this:
+            ```json
+            {
+                "type": "plan_proposal",
+                "title": "Title of Plan",
+                "description": "Short description",
+                "focus_area": "Focus Area",
+                "skills": ["Skill 1", "Skill 2"],
+                "duration_days": 30,
+                "daily_time_minutes": 60
+            }
+            ```
+            """
+
+        return [analyst_task, psychologist_task, contrarian_task, strategist_task]
+
+    async def stream_chat_deliberation(self, user_message: str, user_context: Dict, additional_context: Dict = None, api_key: str = None):
+        """Stream multi-agent deliberation events"""
+        self._ensure_agents(api_key)
+        
+        context_str = f"""
+        User Context:
+        - GitHub: {user_context['github']}
+        - Recent Performance: {user_context['recent_performance']}
+        - Life Decisions: {user_context['life_decisions']}
+        
+        Additional Context: {additional_context if additional_context else 'None'}
+        """
+        
+        tasks = self._create_chat_tasks(user_message, context_str)
+        
+        # Queue for streaming events
+        queue = asyncio.Queue()
+        loop = asyncio.get_running_loop()
+        
+        def step_callback(step_output):
+            # step_output is a generic object, we need to handle it carefully
+            # It typically contains 'agent' which is an Agent object, and 'task_output'
+            try:
+                # Extract agent name safely
+                agent_name = "Unknown Agent"
+                if hasattr(step_output, 'agent') and hasattr(step_output.agent, 'role'):
+                    agent_name = step_output.agent.role
+                
+                # Extract output/thought
+                output = ""
+                if hasattr(step_output, 'task_output') and hasattr(step_output.task_output, 'raw'):
+                    output = step_output.task_output.raw
+                elif hasattr(step_output, 'output'):
+                    output = str(step_output.output)
+                
+                data = {
+                    "type": "step",
+                    "agent": agent_name,
+                    "output": output,
+                    "timestamp": datetime.now().isoformat()
+                }
+                loop.call_soon_threadsafe(queue.put_nowait, data)
+            except Exception as e:
+                print(f"Error in step_callback: {e}")
+
         crew = Crew(
             agents=[self.analyst, self.psychologist, self.contrarian, self.strategist],
-            tasks=[analyst_task, psychologist_task, contrarian_task, strategist_task],
+            tasks=tasks,
+            process=Process.sequential,
+            verbose=True,
+            step_callback=step_callback
+        )
+        
+        async def run_crew():
+            try:
+                result = await asyncio.to_thread(crew.kickoff)
+                
+                # Process final result
+                # We need to reconstruct the 'debate' and 'raw_deliberation' from the stream or just send the final result
+                # For simplicity, we'll send the structured final response as the last event
+                
+                # Note: We can't easily get the full raw output like in the sync version because we're not capturing stdout
+                # But we have the step events which serve a similar purpose
+                
+                final_response = {
+                    "final_response": str(result),
+                    "key_insights": self._extract_key_points(str(result)),
+                    "actions": self._extract_actions(str(result)),
+                    "plan_proposal": self._extract_plan_proposal(str(result))
+                }
+                
+                await queue.put({
+                    "type": "final",
+                    "data": final_response
+                })
+            except Exception as e:
+                await queue.put({"type": "error", "message": str(e)})
+            finally:
+                await queue.put(None) # Sentinel
+
+        # Start crew in background
+        asyncio.create_task(run_crew())
+
+        # Yield events from queue
+        while True:
+            item = await queue.get()
+            if item is None:
+                break
+            yield item
+
+    async def chat_deliberation(self, user_message: str, user_context: Dict, additional_context: Dict = None, api_key: str = None) -> Dict:
+        """Multi-agent deliberation for chat messages with raw output"""
+        self._ensure_agents(api_key)
+        
+        self.raw_output = []  # Reset raw output
+        
+        context_str = f"""
+        User Context:
+        - GitHub: {user_context['github']}
+        - Recent Performance: {user_context['recent_performance']}
+        - Life Decisions: {user_context['life_decisions']}
+        
+        Additional Context: {additional_context if additional_context else 'None'}
+        """
+        
+        tasks = self._create_chat_tasks(user_message, context_str)
+        
+        crew = Crew(
+            agents=[self.analyst, self.psychologist, self.contrarian, self.strategist],
+            tasks=tasks,
             process=Process.sequential,
             verbose=True
         )
         
-        # Capture output
-        result = self._capture_output(crew)
+        # Capture output - note: _capture_output is synchronous because it messes with sys.stdout
+        # We might need to run it in a thread if we want it async, but capturing stdout in a thread is tricky.
+        # For now, let's run it in a thread but be careful.
+        # Actually, _capture_output calls crew.kickoff() which is blocking.
+        
+        def run_and_capture():
+            return self._capture_output(crew)
+            
+        result = await asyncio.to_thread(run_and_capture)
         
         # Parse raw output for agent contributions
         agent_contributions = self._parse_agent_output(self.raw_output)
@@ -289,13 +413,14 @@ class SageMentorCrew:
         
         return contributions
     
-    def analyze_life_decision(self, decision: Dict, user_id: int, db, api_key: str = None) -> Dict:
+    async def analyze_life_decision(self, decision: Dict, user_id: int, db, api_key: str = None) -> Dict:
         """Analyze a major life decision"""
         self._ensure_agents(api_key)
         
-        past_decisions = db.query(models.LifeEvent).filter(
+        result = await db.execute(select(models.LifeEvent).filter(
             models.LifeEvent.user_id == user_id
-        ).order_by(models.LifeEvent.timestamp.desc()).limit(5).all()
+        ).order_by(models.LifeEvent.timestamp.desc()).limit(5))
+        past_decisions = result.scalars().all()
         
         past_context = "\n".join([
             f"- {e.description} ({e.event_type})" # Removed the incorrect e.outcome reference
@@ -335,7 +460,7 @@ class SageMentorCrew:
             verbose=False
         )
         
-        result = crew.kickoff()
+        result = await asyncio.to_thread(crew.kickoff)
         result_str = str(result)
         
         lessons = []
@@ -350,7 +475,7 @@ class SageMentorCrew:
             "long_term_impact": "Use this decision as a reference point for future choices"
         }
     
-    def reevaluate_decision(self, original_event, current_situation: str, what_changed: str, user_id: int, db, api_key: str = None) -> Dict:
+    async def reevaluate_decision(self, original_event, current_situation: str, what_changed: str, user_id: int, db, api_key: str = None) -> Dict:
         """Re-evaluate a past decision with hindsight"""
         self._ensure_agents(api_key)
         
@@ -384,7 +509,7 @@ class SageMentorCrew:
             verbose=False
         )
         
-        result = crew.kickoff()
+        result = await asyncio.to_thread(crew.kickoff)
         result_str = str(result)
         
         new_lessons = []
@@ -406,7 +531,7 @@ class SageMentorCrew:
             "how_it_aged": aging
         }
     
-    def quick_checkin_analysis(self, checkin_data: Dict, user_history: Dict, api_key: str = None) -> Dict:
+    async def quick_checkin_analysis(self, checkin_data: Dict, user_history: Dict, api_key: str = None) -> Dict:
         """Quick analysis for daily check-ins"""
         self._ensure_agents(api_key)
         
@@ -440,10 +565,10 @@ class SageMentorCrew:
             verbose=False
         )
         
-        result = crew.kickoff()
+        result = await asyncio.to_thread(crew.kickoff)
         return {"analysis": str(result)}
     
-    def evening_checkin_review(self, morning_commitment: str, shipped: bool, excuse: str = None, api_key: str = None) -> Dict:
+    async def evening_checkin_review(self, morning_commitment: str, shipped: bool, excuse: str = None, api_key: str = None) -> Dict:
         """Review whether user followed through on morning commitment"""
         self._ensure_agents(api_key)
         
@@ -472,7 +597,7 @@ class SageMentorCrew:
             verbose=False
         )
         
-        result = crew.kickoff()
+        result = await asyncio.to_thread(crew.kickoff)
         return {"feedback": str(result)}
     
     def _prepare_context(self, github_data: Dict, checkin_history: List[Dict] = None) -> str:
@@ -534,8 +659,23 @@ class SageMentorCrew:
                 })
         
         return actions[:3]
+
+    def _extract_plan_proposal(self, text: str) -> Dict:
+        """Extract JSON plan proposal from text"""
+        try:
+            import re
+            # Look for JSON block
+            json_match = re.search(r'```json\s*({.*?})\s*```', text, re.DOTALL)
+            if json_match:
+                data = json.loads(json_match.group(1))
+                if data.get("type") == "plan_proposal":
+                    return data
+            return None
+        except Exception as e:
+            print(f"Error extracting plan proposal: {e}")
+            return None
     
-    def analyze_goal(self, goal_data: Dict, user_context: Dict, db, api_key: str = None) -> Dict:
+    async def analyze_goal(self, goal_data: Dict, user_context: Dict, db, api_key: str = None) -> Dict:
         """Comprehensive AI analysis of a life goal"""
         self._ensure_agents(api_key)
         
@@ -636,7 +776,7 @@ class SageMentorCrew:
             verbose=True
         )
         
-        result = crew.kickoff()
+        result = await asyncio.to_thread(crew.kickoff)
         
         return self._parse_goal_analysis(str(result), goal_data)
     
@@ -739,14 +879,15 @@ class SageMentorCrew:
         else:
             return "3-6 months"  # Default
     
-    def analyze_goal_progress(self, goal, progress_data: Dict, user_id: int, db, api_key: str = None) -> Dict:
+    async def analyze_goal_progress(self, goal, progress_data: Dict, user_id: int, db, api_key: str = None) -> Dict:
         """Analyze progress update on a goal"""
         self._ensure_agents(api_key)
         
         # Get recent progress logs
-        recent_logs = db.query(models.GoalProgress).filter(
+        result = await db.execute(select(models.GoalProgress).filter(
             models.GoalProgress.goal_id == goal.id
-        ).order_by(models.GoalProgress.timestamp.desc()).limit(5).all()
+        ).order_by(models.GoalProgress.timestamp.desc()).limit(5))
+        recent_logs = result.scalars().all()
         
         progress_history = [
             {
@@ -795,7 +936,7 @@ class SageMentorCrew:
             verbose=False
         )
         
-        result = crew.kickoff()
+        result = await asyncio.to_thread(crew.kickoff)
         
         return {
             "feedback": str(result),
@@ -825,22 +966,24 @@ class SageMentorCrew:
         warning_words = ['stall', 'stuck', 'concern', 'warning', 'red flag', 'reconsider']
         return any(word in feedback.lower() for word in warning_words)
     
-    def weekly_goals_review(self, user_id: int, db) -> Dict:
+    async def weekly_goals_review(self, user_id: int, db) -> Dict:
         """Weekly review of all active goals"""
         
-        goals = db.query(models.Goal).filter(
+        result = await db.execute(select(models.Goal).filter(
             models.Goal.user_id == user_id,
             models.Goal.status == 'active'
-        ).all()
+        ).options(selectinload(models.Goal.subgoals)))
+        goals = result.scalars().all()
         
         if not goals:
             return {"message": "No active goals to review"}
         
         goals_summary = []
         for goal in goals:
-            recent_progress = db.query(models.GoalProgress).filter(
+            result = await db.execute(select(models.GoalProgress).filter(
                 models.GoalProgress.goal_id == goal.id
-            ).order_by(models.GoalProgress.timestamp.desc()).first()
+            ).order_by(models.GoalProgress.timestamp.desc()).limit(1))
+            recent_progress = result.scalars().first()
             
             goals_summary.append({
                 "title": goal.title,
@@ -878,7 +1021,7 @@ class SageMentorCrew:
             verbose=False
         )
         
-        result = crew.kickoff()
+        result = await asyncio.to_thread(crew.kickoff)
         
         return {
             "review": str(result),

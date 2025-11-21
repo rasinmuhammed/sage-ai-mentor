@@ -5,6 +5,7 @@ import axios from 'axios'
 import { Send, Brain, BarChart, AlertTriangle, Target, Loader2, MessageCircle, History, Eye, EyeOff, Sparkles, Terminal } from 'lucide-react'
 import MarkdownRenderer from './MarkdownRenderer'
 import FirstTimeTooltip from './FirstTimeTooltip'
+import PlanPreview from './chat/PlanPreview'
 
 // Assuming API_URL is defined elsewhere or replace with actual URL
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
@@ -29,6 +30,7 @@ interface Message {
     priority: string
   }>
   raw_deliberation?: AgentContribution[]
+  plan_proposal?: any // Type this properly if shared
   timestamp: Date
 }
 
@@ -38,7 +40,10 @@ interface ChatProps {
 
 
 
+import { useDashboard } from '@/contexts/DashboardContext'
+
 export default function Chat({ githubUsername }: ChatProps) {
+  const { activeGoals, actionPlans, todayCommitment } = useDashboard()
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -86,6 +91,7 @@ export default function Chat({ githubUsername }: ChatProps) {
     const userMessage = input
     setInput('')
 
+    // Add user message
     setMessages(prev => [...prev, {
       type: 'user',
       content: userMessage,
@@ -94,20 +100,115 @@ export default function Chat({ githubUsername }: ChatProps) {
 
     setLoading(true)
 
+    // Add placeholder assistant message
+    setMessages(prev => [...prev, {
+      type: 'assistant',
+      content: '',
+      debate: [],
+      insights: [],
+      actions: [],
+      raw_deliberation: [],
+      timestamp: new Date()
+    }])
+
     try {
-      const response = await axios.post(`${API_URL}/chat/${githubUsername}`, {
-        message: userMessage
+      const groqKey = localStorage.getItem('groq_api_key')
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json'
+      }
+      if (groqKey) {
+        headers['X-Groq-Key'] = groqKey
+      }
+
+      // Construct context summary
+      const contextSummary = {
+        active_goals: activeGoals.map(g => ({ title: g.title, progress: g.progress })),
+        active_plan: actionPlans.find(p => p.status === 'active') ? {
+          title: actionPlans.find(p => p.status === 'active')?.title,
+          day: actionPlans.find(p => p.status === 'active')?.current_day,
+          focus: actionPlans.find(p => p.status === 'active')?.focus_area
+        } : null,
+        today_commitment: todayCommitment ? {
+          commitment: todayCommitment.commitment,
+          shipped: todayCommitment.shipped
+        } : null
+      }
+
+      const response = await fetch(`${API_URL}/chat/${githubUsername}`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          message: userMessage,
+          context: contextSummary
+        })
       })
 
-      setMessages(prev => [...prev, {
-        type: 'assistant',
-        content: response.data.response,
-        debate: response.data.agent_debate, // Make sure backend provides this structure
-        insights: response.data.key_insights,
-        actions: response.data.recommended_actions,
-        raw_deliberation: response.data.raw_deliberation,
-        timestamp: new Date()
-      }])
+      if (!response.ok) throw new Error('Network response was not ok')
+      if (!response.body) throw new Error('No response body')
+
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n\n')
+        buffer = lines.pop() || ''
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = JSON.parse(line.slice(6))
+
+            setMessages(prev => {
+              const newMessages = [...prev]
+              const lastMessage = newMessages[newMessages.length - 1]
+
+              if (lastMessage.type !== 'assistant') return prev
+
+              if (data.type === 'step') {
+                // Update raw deliberation
+                const newDeliberation = [...(lastMessage.raw_deliberation || [])]
+                newDeliberation.push({
+                  agent: data.agent,
+                  output: data.output,
+                  timestamp: data.timestamp
+                })
+
+                // Also update debate if it's a significant step (simplified logic)
+                // In a real app, we might want to parse the output to see if it's a full thought
+                const newDebate = [...(lastMessage.debate || [])]
+                // Only add to debate if it's a new agent or significant update
+                // For now, we'll just rely on raw_deliberation for the stream
+
+                return newMessages.map((msg, idx) =>
+                  idx === newMessages.length - 1
+                    ? { ...msg, raw_deliberation: newDeliberation }
+                    : msg
+                )
+              } else if (data.type === 'final') {
+                // Update final response
+                const finalData = data.data
+                return newMessages.map((msg, idx) =>
+                  idx === newMessages.length - 1
+                    ? {
+                      ...msg,
+                      content: finalData.final_response,
+                      insights: finalData.key_insights,
+                      actions: finalData.actions,
+                      plan_proposal: finalData.plan_proposal // Capture plan proposal
+                    }
+                    : msg
+                )
+              }
+
+              return prev
+            })
+          }
+        }
+      }
 
       // Track onboarding progress
       if (typeof window !== 'undefined') {
@@ -218,42 +319,40 @@ export default function Chat({ githubUsername }: ChatProps) {
 
                   {/* Raw Deliberation Section */}
                   {msg.raw_deliberation && msg.raw_deliberation.length > 0 && (
-                    <div className="ml-8">
-                      {/* Button style */}
+                    <div className="ml-8 mt-4">
                       <button
                         onClick={() => setShowRawDeliberation(showRawDeliberation === idx ? null : idx)}
-                        className="flex items-center space-x-2 text-sm font-semibold text-[#FBFAEE]/60 hover:text-[#FBFAEE]/80 transition mb-3"
+                        className="flex items-center space-x-2 text-sm font-semibold text-[#FBFAEE]/60 hover:text-[#FBFAEE]/80 transition mb-3 group"
                       >
-                        <Terminal className="w-4 h-4" />
+                        <div className="p-1.5 rounded-lg bg-[#242424] group-hover:bg-[#333] transition-colors">
+                          <Terminal className="w-4 h-4" />
+                        </div>
                         <span>
-                          {showRawDeliberation === idx ? 'Hide Raw Deliberation' : 'Show Raw Deliberation'}
+                          {showRawDeliberation === idx ? 'Hide Thinking Process' : 'Show Thinking Process'}
                         </span>
-                        {/* Green accent kept for status */}
-                        <span className="bg-green-500/20 text-green-300 px-2 py-0.5 rounded-full text-xs">
-                          Behind the scenes
+                        <span className="bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded-full text-[10px] uppercase tracking-wider font-medium border border-blue-500/20">
+                          Raw Logs
                         </span>
                       </button>
 
                       {showRawDeliberation === idx && (
-                        <div className="space-y-3 animate-in slide-in-from-top duration-300 mb-4">
+                        <div className="space-y-3 animate-in slide-in-from-top duration-300 mb-6">
                           {msg.raw_deliberation.map((contribution, i) => (
-                            // Raw deliberation item style
                             <div
                               key={i}
-                              className="bg-[#000000]/50 border border-[#242424]/40 rounded-xl p-4 overflow-hidden"
+                              className="bg-[#0a0a0a] border border-[#333] rounded-lg overflow-hidden font-mono text-xs shadow-inner"
                             >
-                              <div className="flex items-center justify-between mb-3 pb-2 border-b border-[#242424]/40">
+                              <div className="flex items-center justify-between px-4 py-2 bg-[#1a1a1a] border-b border-[#333]">
                                 <div className="flex items-center space-x-2">
-                                  {/* Agent color indicator */}
-                                  <div className={`bg-gradient-to-r ${agentColors[contribution.agent]} w-3 h-3 rounded-full shadow-lg`}></div>
-                                  <span className="text-[#FBFAEE]/80 font-bold text-sm">{contribution.agent}</span>
+                                  <div className={`w-2 h-2 rounded-full bg-gradient-to-r ${agentColors[contribution.agent] || 'from-gray-500 to-gray-600'}`}></div>
+                                  <span className="text-[#FBFAEE]/90 font-bold">{contribution.agent}</span>
                                 </div>
-                                <span className="text-[#FBFAEE]/50 text-xs">
-                                  {new Date(contribution.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                <span className="text-[#FBFAEE]/40">
+                                  {new Date(contribution.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                                 </span>
                               </div>
-                              <div className="text-xs">
-                                <pre className="text-[#FBFAEE]/70 font-mono whitespace-pre-wrap break-words">
+                              <div className="p-4 overflow-x-auto">
+                                <pre className="text-[#FBFAEE]/70 whitespace-pre-wrap break-words leading-relaxed">
                                   {cleanAnsi(contribution.output)}
                                 </pre>
                               </div>
@@ -324,8 +423,10 @@ export default function Chat({ githubUsername }: ChatProps) {
                       <ul className="space-y-2">
                         {msg.insights.map((insight, i) => (
                           <li key={i} className="text-sm text-[#FBFAEE]/80 flex items-start">
-                            <span className="text-[#C488F8] mr-2">•</span>
-                            <span>{insight}</span>
+                            <span className="text-[#C488F8] mr-2 mt-1">•</span>
+                            <div className="flex-1">
+                              <MarkdownRenderer content={insight} className="text-sm" />
+                            </div>
                           </li>
                         ))}
                       </ul>
@@ -342,13 +443,28 @@ export default function Chat({ githubUsername }: ChatProps) {
                       <ul className="space-y-2">
                         {msg.actions.map((action, i) => (
                           <li key={i} className="text-sm text-[#FBFAEE]/80 flex items-start">
-                            <span className={`font-bold mr-2 ${action.priority === 'high' ? 'text-red-400' : 'text-green-400'}`}>
+                            <span className={`font-bold mr-2 mt-1 ${action.priority === 'high' ? 'text-red-400' : 'text-green-400'}`}>
                               {i + 1}.
                             </span>
-                            <span>{action.action}</span>
+                            <div className="flex-1">
+                              <MarkdownRenderer content={action.action} className="text-sm" />
+                            </div>
                           </li>
                         ))}
                       </ul>
+                    </div>
+                  )}
+
+                  {/* Generative UI: Plan Preview */}
+                  {msg.plan_proposal && (
+                    <div className="ml-8">
+                      <PlanPreview
+                        proposal={msg.plan_proposal}
+                        githubUsername={githubUsername}
+                        onPlanCreated={() => {
+                          // Optional: Add a system message confirming creation
+                        }}
+                      />
                     </div>
                   )}
                 </div>
@@ -402,7 +518,7 @@ export default function Chat({ githubUsername }: ChatProps) {
             <Send className="w-5 h-5" />
           </button>
         </div>
-        <p className="text-xs text-[#FBFAEE]/50 mt-2 text-center relative">
+        <div className="text-xs text-[#FBFAEE]/50 mt-2 text-center relative">
           💡 Press Enter to send, Shift+Enter for new line. Powered by multi-agent deliberation.
           <FirstTimeTooltip
             id="first_chat_message"
@@ -410,7 +526,7 @@ export default function Chat({ githubUsername }: ChatProps) {
             description="Try asking: 'How can I improve my coding speed?' or 'Analyze my recent goals'."
             position="top"
           />
-        </p>
+        </div>
       </div>
     </div>
   )

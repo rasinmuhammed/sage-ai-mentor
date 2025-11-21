@@ -43,12 +43,14 @@ export default function Settings({ githubUsername }: SettingsProps) {
 
         setLoading(true)
         try {
-            await axios.patch(`${API_URL}/users/${githubUsername}/config`, { neon_db_url: dbUrl })
-            setMessage({ type: 'success', text: 'Database URL updated. Please restart the backend.' })
+            // Use the setup-database endpoint for immediate validation and initialization
+            await axios.post(`${API_URL}/users/${githubUsername}/setup-database`, { database_url: dbUrl })
+            setMessage({ type: 'success', text: 'Database connected & initialized successfully! You are ready to go.' })
             setDbUrl('')
-        } catch (err) {
+        } catch (err: any) {
             console.error(err)
-            setMessage({ type: 'error', text: 'Failed to update database configuration.' })
+            const errorMsg = err.response?.data?.detail || 'Failed to connect to database.'
+            setMessage({ type: 'error', text: errorMsg })
         } finally {
             setLoading(false)
         }
@@ -122,10 +124,6 @@ export default function Settings({ githubUsername }: SettingsProps) {
                         <h3 className="text-xl font-semibold text-[#FBFAEE] mb-2">Neon Database URL</h3>
                         <p className="text-sm text-[#FBFAEE]/60 mb-4">
                             Connect to your own Neon PostgreSQL database.
-                            <span className="text-yellow-400 block mt-1 flex items-center">
-                                <AlertTriangle className="w-3 h-3 mr-1" />
-                                Requires backend restart to take effect.
-                            </span>
                         </p>
 
                         <div className="flex space-x-3 mb-4">

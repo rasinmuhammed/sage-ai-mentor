@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 from typing import List, Dict
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 import models
 from crew import SageMentorCrew
 
@@ -10,16 +11,17 @@ class ProactiveInsightsEngine:
     def __init__(self):
         self.crew = SageMentorCrew()
     
-    def analyze_weekly_patterns(self, user_id: int, db: Session) -> Dict:
+    async def analyze_weekly_patterns(self, user_id: int, db: AsyncSession) -> Dict:
         """Analyze weekly patterns and generate insights"""
         
         week_ago = datetime.utcnow() - timedelta(days=7)
         
         # Get week's data
-        checkins = db.query(models.CheckIn).filter(
+        result = await db.execute(select(models.CheckIn).filter(
             models.CheckIn.user_id == user_id,
             models.CheckIn.timestamp >= week_ago
-        ).all()
+        ))
+        checkins = result.scalars().all()
         
         if len(checkins) < 3:
             return {"insufficient_data": True}
@@ -154,9 +156,9 @@ class ProactiveInsightsEngine:
         
         return recommendations
     
-    def generate_weekly_report(self, user_id: int, db: Session) -> str:
+    async def generate_weekly_report(self, user_id: int, db: AsyncSession) -> str:
         """Generate weekly summary report"""
-        insights = self.analyze_weekly_patterns(user_id, db)
+        insights = await self.analyze_weekly_patterns(user_id, db)
         
         if insights.get("insufficient_data"):
             return "Insufficient data for weekly report. Check in more regularly."

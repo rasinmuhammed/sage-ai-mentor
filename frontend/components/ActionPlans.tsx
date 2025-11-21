@@ -3,66 +3,21 @@ import axios from 'axios'
 import {
   Target, Calendar, Clock, CheckCircle, Plus, ArrowRight,
   Loader2, ChevronRight, ChevronDown, Filter, X, Flame, Brain, Award,
-  AlertCircle, Edit, Trash2, Play, Pause, RefreshCw // Added for completeness
+  AlertCircle, Edit, Trash2, Play, Pause, RefreshCw
 } from 'lucide-react'
+import MarkdownRenderer from './MarkdownRenderer'
+import { useActionPlansQuery, ActionPlan, DailyTask, Skill, PlanSkillFocus, SkillFocusSummary } from '@/hooks/useActionPlansQuery'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
-// --- Interfaces for Type Safety ---
-
-interface Skill {
-  name: string
-  daily_time: number
-  priority: string
-}
-
-interface PlanSkillFocus {
-  skills: Skill[]
-}
-
-interface DailyTask {
-  id: number
-  day_number: number
-  date: string
-  title: string
-  description: string
-  task_type: string
-  difficulty: 'easy' | 'medium' | 'hard'
-  estimated_time: number // minutes
-  status: 'pending' | 'in_progress' | 'completed' | 'skipped'
-  actual_time_spent?: number
-  difficulty_rating?: number
-  notes?: string
-}
-
-interface ActionPlan {
-  id: number
-  title: string
-  description: string
-  plan_type: string
-  focus_area: string
-  status: 'active' | 'completed' | 'paused' | 'abandoned'
-  start_date: string
-  end_date: string | null
-  current_day: number
-  completion_percentage: number
-  ai_analysis: string
-  skills_to_focus: PlanSkillFocus
-  milestones: any
-  daily_tasks: DailyTask[] // Not always loaded via list endpoint, but useful for detail
-}
-
-interface SkillFocusSummary {
-  total_time: number
-  total_sessions: number
-  skills: { [key: string]: any }
-}
+// Interfaces imported from hook
 
 interface TaskCardProps {
   task: DailyTask
   planId: number
   githubUsername: string
   onComplete: () => void
+  onOptimisticComplete: (taskId: number, updates: Partial<DailyTask>) => void
 }
 
 interface PlanCardProps {
@@ -81,46 +36,41 @@ interface CreatePlanModalProps {
 // --- Main Component ---
 
 export default function ActionPlans({ githubUsername }: { githubUsername: string }) {
-  const [plans, setPlans] = useState<ActionPlan[]>([])
+  const { plans, skillFocusSummary, isLoading: contextLoading, invalidate } = useActionPlansQuery(githubUsername)
+
   const [activePlan, setActivePlan] = useState<ActionPlan | null>(null)
   const [todayTasks, setTodayTasks] = useState<any>(null)
-  const [loading, setLoading] = useState(true)
+  const [localLoading, setLocalLoading] = useState(false)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [expandedPlan, setExpandedPlan] = useState<number | null>(null)
-  const [skillFocusSummary, setSkillFocusSummary] = useState<SkillFocusSummary | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [advancingDay, setAdvancingDay] = useState(false)
 
+  // Initial fetch handled by useQuery
+
   useEffect(() => {
-    loadData()
-  }, [githubUsername])
-
-  const loadData = async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const [plansRes, focusRes] = await Promise.all([
-        axios.get<ActionPlan[]>(`${API_URL}/action-plans/${githubUsername}`),
-        axios.get<SkillFocusSummary>(`${API_URL}/skill-focus/${githubUsername}/summary?days=7`)
-      ])
-
-      setPlans(plansRes.data)
-      setSkillFocusSummary(focusRes.data)
-
-      const active = plansRes.data.find(p => p.status === 'active')
-      if (active) {
-        setActivePlan(active)
-        loadTodayTasks(active.id)
-      } else {
-        setActivePlan(null)
-        setTodayTasks(null)
-      }
-    } catch (error: any) {
-      console.error('Failed to load action plans:', error)
-      setError('Failed to load action plans.')
-    } finally {
-      setLoading(false)
+    // Update active plan when plans change
+    const active = plans.find(p => p.status === 'active')
+    if (active) {
+      setActivePlan(active)
+      loadTodayTasks(active.id)
+    } else {
+      setActivePlan(null)
+      setTodayTasks(null)
     }
+  }, [plans])
+
+  const loadTodayTasks = async (planId: number) => {
+    try {
+      const response = await axios.get(`${API_URL}/action-plans/${githubUsername}/${planId}/today`)
+      setTodayTasks(response.data)
+    } catch (error) {
+      console.error('Failed to load today tasks:', error)
+    }
+  }
+
+  const handleRefresh = () => {
+    invalidate()
   }
 
   const handleAdvanceDay = async (planId: number) => {
@@ -137,7 +87,7 @@ export default function ActionPlans({ githubUsername }: { githubUsername: string
         alert(`Advanced to Day ${response.data.current_day}!`);
       }
 
-      loadData(); // Reload all data to refresh active plan, tasks, and day number
+      invalidate(); // Reload all data to refresh active plan, tasks, and day number
     } catch (error) {
       console.error('Failed to advance day:', error);
       alert('Failed to advance day.');
@@ -146,17 +96,23 @@ export default function ActionPlans({ githubUsername }: { githubUsername: string
     }
   };
 
+  const handleOptimisticTaskCompletion = (taskId: number, updates: Partial<DailyTask>) => {
+    if (!todayTasks) return;
 
-  const loadTodayTasks = async (planId: number) => {
-    try {
-      const response = await axios.get(`${API_URL}/action-plans/${githubUsername}/${planId}/today`)
-      setTodayTasks(response.data)
-    } catch (error) {
-      console.error('Failed to load today tasks:', error)
-    }
-  }
+    setTodayTasks((prev: any) => {
+      if (!prev) return null;
+      return {
+        ...prev,
+        tasks: prev.tasks.map((task: DailyTask) =>
+          task.id === taskId ? { ...task, ...updates } : task
+        )
+      };
+    });
+  };
 
-  if (loading && !error) {
+  // Show loading only if we have no plans and context is loading
+  // This prevents flicker if we have cached plans but are revalidating
+  if (contextLoading && plans.length === 0) {
     return (
       <div className="text-center py-16 text-[#FBFAEE]/70">
         <Loader2 className="w-8 h-8 animate-spin mx-auto mb-3 text-[#933DC9]" />
@@ -167,11 +123,11 @@ export default function ActionPlans({ githubUsername }: { githubUsername: string
 
   if (error) {
     return (
-      <div className="bg-[#242424] border border-red-500/40 rounded-2xl p-6 text-center">
+      <div className="glass-card border-red-500/40 rounded-2xl p-6 text-center">
         <AlertCircle className="w-8 h-8 text-red-400 mx-auto mb-3" />
         <p className="text-red-300 mb-4">{error}</p>
         <button
-          onClick={loadData}
+          onClick={handleRefresh}
           className="px-4 py-2 bg-[#933DC9] text-[#FBFAEE] rounded-lg hover:brightness-110 transition"
         >
           Retry Load
@@ -181,24 +137,24 @@ export default function ActionPlans({ githubUsername }: { githubUsername: string
   }
 
   return (
-    <div className="space-y-6 text-[#FBFAEE]">
+    <div className="space-y-6 text-[#FBFAEE] animate-in fade-in slide-in-from-bottom-4 duration-500">
       {/* Header */}
-      <div className="bg-[#242424] border border-[#242424]/50 rounded-2xl shadow-xl p-6 relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-[#933DC9]/10 rounded-full blur-3xl -mr-32 -mt-32 pointer-events-none"></div>
+      <div className="glass-card rounded-2xl p-6 relative overflow-hidden group">
+        <div className="absolute top-0 right-0 w-64 h-64 bg-[#933DC9]/10 rounded-full blur-3xl -mr-32 -mt-32 pointer-events-none group-hover:bg-[#933DC9]/20 transition-all duration-500"></div>
 
         <div className="flex items-center justify-between mb-8 relative z-10">
           <div className="flex items-center">
-            <div className="bg-gradient-to-br from-[#933DC9] to-[#53118F] p-4 rounded-2xl shadow-lg mr-5">
+            <div className="bg-gradient-to-br from-[#933DC9] to-[#53118F] p-4 rounded-2xl shadow-lg mr-5 shadow-purple-500/20">
               <Target className="w-8 h-8 text-[#FBFAEE]" />
             </div>
             <div>
-              <h2 className="text-3xl font-bold text-[#FBFAEE]">Learning Paths</h2>
+              <h2 className="text-3xl font-bold text-gradient">Learning Paths</h2>
               <p className="text-[#FBFAEE]/60 mt-1">Structured action plans to master new skills</p>
             </div>
           </div>
           <button
             onClick={() => setShowCreateModal(true)}
-            className="bg-[#FBFAEE] text-black px-6 py-3 rounded-xl font-bold hover:bg-[#FBFAEE]/90 transition flex items-center shadow-lg shadow-white/5"
+            className="bg-[#FBFAEE] text-black px-6 py-3 rounded-xl font-bold hover:bg-[#FBFAEE]/90 transition flex items-center shadow-lg shadow-white/5 hover:scale-105 active:scale-95"
           >
             <Plus className="w-5 h-5 mr-2" />
             New Plan
@@ -209,7 +165,7 @@ export default function ActionPlans({ githubUsername }: { githubUsername: string
         {skillFocusSummary && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 relative z-10">
             {/* Total Time Card */}
-            <div className="bg-[#000000]/40 rounded-xl p-5 border border-[#242424]/40 backdrop-blur-sm">
+            <div className="bg-black/20 rounded-xl p-5 border border-white/5 backdrop-blur-sm hover:bg-black/30 transition-colors">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-medium text-[#FBFAEE]/60 uppercase tracking-wider">Total Focus</span>
                 <Clock className="w-4 h-4 text-[#C488F8]" />
@@ -221,7 +177,7 @@ export default function ActionPlans({ githubUsername }: { githubUsername: string
             </div>
 
             {/* Skills Breakdown */}
-            <div className="col-span-2 bg-[#000000]/40 rounded-xl p-5 border border-[#242424]/40 backdrop-blur-sm flex flex-col justify-center">
+            <div className="col-span-2 bg-black/20 rounded-xl p-5 border border-white/5 backdrop-blur-sm flex flex-col justify-center hover:bg-black/30 transition-colors">
               <div className="flex items-center justify-between mb-3">
                 <span className="text-xs font-medium text-[#FBFAEE]/60 uppercase tracking-wider">Skill Distribution</span>
                 <span className="text-xs text-[#FBFAEE]/40">{Object.keys(skillFocusSummary.skills).length} active skills</span>
@@ -233,7 +189,7 @@ export default function ActionPlans({ githubUsername }: { githubUsername: string
                       <span className="text-[#FBFAEE]/80 font-medium">{name}</span>
                       <span className="text-[#FBFAEE]/60">{Math.round(data.total_minutes / 60)}h</span>
                     </div>
-                    <div className="w-full bg-[#242424] rounded-full h-1.5 overflow-hidden">
+                    <div className="w-full bg-white/5 rounded-full h-1.5 overflow-hidden">
                       <div
                         className="bg-gradient-to-r from-[#933DC9] to-[#C488F8] h-full rounded-full opacity-80"
                         style={{ width: `${Math.min(100, (data.total_minutes / (skillFocusSummary.total_time || 1)) * 100)}%` }}
@@ -249,78 +205,89 @@ export default function ActionPlans({ githubUsername }: { githubUsername: string
 
       {/* Today's Tasks Section */}
       {activePlan && todayTasks && (
-        <div className="bg-gradient-to-br from-[#933DC9]/30 to-[#53118F]/30 border-2 border-[#933DC9]/50 rounded-2xl p-6 shadow-xl">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center">
-              <div className="bg-gradient-to-r from-[#933DC9] to-[#53118F] p-3 rounded-xl mr-3">
-                <Calendar className="w-6 h-6 text-[#FBFAEE]" />
+        <div className="glass-card border-2 border-[#933DC9]/30 rounded-2xl p-6 shadow-xl relative overflow-hidden">
+          <div className="absolute inset-0 bg-gradient-to-br from-[#933DC9]/10 to-transparent pointer-events-none"></div>
+
+          <div className="relative z-10">
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center">
+                <div className="bg-gradient-to-r from-[#933DC9] to-[#53118F] p-3 rounded-xl mr-3 shadow-lg shadow-purple-500/20">
+                  <Calendar className="w-6 h-6 text-[#FBFAEE]" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold text-[#FBFAEE]">Day {todayTasks.day_number} of 30</h3>
+                  <p className="text-sm text-[#FBFAEE]/70">{activePlan.focus_area}</p>
+                </div>
               </div>
-              <div>
-                <h3 className="text-xl font-bold">Day {todayTasks.day_number} of 30</h3>
-                <p className="text-sm text-[#FBFAEE]/70">{activePlan.focus_area}</p>
+              <div className="flex items-center space-x-2 bg-orange-500/10 border border-orange-500/20 px-4 py-1.5 rounded-full">
+                <Flame className="w-4 h-4 text-orange-400" />
+                <span className="text-orange-300 font-bold text-sm">Focus Day</span>
               </div>
             </div>
-            <div className="flex items-center space-x-2 bg-orange-600/20 border border-orange-500/40 px-3 py-1 rounded-full">
-              <Flame className="w-4 h-4 text-orange-400" />
-              <span className="text-orange-300 font-bold text-sm">Focus Day</span>
+
+            {/* Today's Tasks */}
+            <div className="space-y-3 mb-6">
+              {todayTasks.tasks.map((task: DailyTask) => (
+                <TaskCard
+                  key={task.id}
+                  task={task}
+                  planId={activePlan.id}
+                  githubUsername={githubUsername}
+                  onComplete={() => loadTodayTasks(activePlan.id)}
+                  onOptimisticComplete={handleOptimisticTaskCompletion}
+                />
+              ))}
             </div>
-          </div>
 
-          {/* Today's Tasks */}
-          <div className="space-y-3 mb-4">
-            {todayTasks.tasks.map((task: DailyTask) => (
-              <TaskCard key={task.id} task={task} planId={activePlan.id} githubUsername={githubUsername} onComplete={loadData} />
-            ))}
-          </div>
+            {/* Action Buttons */}
+            <div className="flex items-center space-x-4 pt-4 border-t border-white/5">
+              {todayTasks.tasks.every((t: DailyTask) => t.status === 'completed') ? (
+                <button
+                  onClick={() => handleAdvanceDay(activePlan.id)}
+                  disabled={advancingDay}
+                  className="flex-1 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-[#FBFAEE] py-3 rounded-xl font-bold transition-all transform hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 flex items-center justify-center shadow-lg shadow-green-500/20"
+                >
+                  {advancingDay ? <Loader2 className="w-5 h-5 animate-spin" /> : <ArrowRight className="w-5 h-5 mr-2" />}
+                  {activePlan.current_day >= 30 ? 'Finalize Plan' : 'Advance to Next Day'}
+                </button>
+              ) : (
+                <div className="flex-1 text-sm text-yellow-300 flex items-center justify-center space-x-2 bg-yellow-500/10 border border-yellow-500/20 p-3 rounded-xl">
+                  <AlertCircle className="w-5 h-5" />
+                  <span>Complete all tasks to advance to Day {activePlan.current_day + 1}.</span>
+                </div>
+              )}
+            </div>
 
-          {/* Action Buttons */}
-          <div className="flex items-center space-x-4 pt-4 border-t border-[#242424]/50">
-            {todayTasks.tasks.every((t: DailyTask) => t.status === 'completed') ? (
-              <button
-                onClick={() => handleAdvanceDay(activePlan.id)}
-                disabled={advancingDay}
-                className="flex-1 bg-green-600 hover:bg-green-700 text-[#FBFAEE] py-3 rounded-xl font-bold transition disabled:opacity-50 flex items-center justify-center"
-              >
-                {advancingDay ? <Loader2 className="w-5 h-5 animate-spin" /> : <ArrowRight className="w-5 h-5 mr-2" />}
-                {activePlan.current_day >= 30 ? 'Finalize Plan' : 'Advance to Next Day'}
-              </button>
-            ) : (
-              <div className="flex-1 text-sm text-yellow-300 flex items-center space-x-2 bg-yellow-900/30 p-3 rounded-xl">
-                <AlertCircle className="w-5 h-5" />
-                <span>Complete all tasks to advance to Day {activePlan.current_day + 1}.</span>
+            {/* Skills to Focus */}
+            {todayTasks.skills_to_focus && todayTasks.skills_to_focus.length > 0 && (
+              <div className="mt-4 p-4 bg-black/20 rounded-xl border border-white/5">
+                <h4 className="text-sm font-semibold text-[#FBFAEE]/70 mb-2 flex items-center">
+                  <Brain className="w-4 h-4 mr-2 text-[#C488F8]" />
+                  Focus Skills Today:
+                </h4>
+                <div className="flex flex-wrap gap-2">
+                  {todayTasks.skills_to_focus.map((skill: Skill, idx: number) => (
+                    <span key={idx} className="px-3 py-1 bg-[#933DC9]/20 text-[#C488F8] border border-[#933DC9]/40 rounded-full text-xs font-medium">
+                      {skill.name} ({Math.round(skill.daily_time)} mins)
+                    </span>
+                  ))}
+                </div>
               </div>
             )}
           </div>
-
-          {/* Skills to Focus */}
-          {todayTasks.skills_to_focus && todayTasks.skills_to_focus.length > 0 && (
-            <div className="mt-4 p-4 bg-[#000000]/50 rounded-xl border border-[#242424]/60">
-              <h4 className="text-sm font-semibold text-[#FBFAEE]/70 mb-2 flex items-center">
-                <Brain className="w-4 h-4 mr-2 text-[#C488F8]" />
-                Focus Skills Today:
-              </h4>
-              <div className="flex flex-wrap gap-2">
-                {todayTasks.skills_to_focus.map((skill: Skill, idx: number) => (
-                  <span key={idx} className="px-3 py-1 bg-[#933DC9]/20 text-[#C488F8] border border-[#933DC9]/40 rounded-full text-xs font-medium">
-                    {skill.name} ({Math.round(skill.daily_time)} mins)
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       )}
 
       {/* Plans List */}
       <div className="space-y-4">
         {plans.length === 0 ? (
-          <div className="text-center py-16 bg-[#242424] border border-[#242424]/50 rounded-2xl">
+          <div className="text-center py-16 glass-card rounded-2xl">
             <Target className="w-16 h-16 mx-auto mb-4 text-[#FBFAEE]/30" />
             <h3 className="text-xl font-semibold mb-2 text-[#FBFAEE]">No action plans yet</h3>
             <p className="text-[#FBFAEE]/70 mb-6">Create your first 30-day learning plan</p>
             <button
               onClick={() => setShowCreateModal(true)}
-              className="bg-gradient-to-r from-[#933DC9] to-[#53118F] text-[#FBFAEE] px-6 py-3 rounded-xl font-semibold hover:brightness-110 transition"
+              className="bg-gradient-to-r from-[#933DC9] to-[#53118F] text-[#FBFAEE] px-6 py-3 rounded-xl font-semibold hover:brightness-110 transition shadow-lg shadow-purple-500/20"
             >
               Create Your First Plan
             </button>
@@ -332,7 +299,7 @@ export default function ActionPlans({ githubUsername }: { githubUsername: string
               plan={plan}
               expanded={expandedPlan === plan.id}
               onToggle={() => setExpandedPlan(expandedPlan === plan.id ? null : plan.id)}
-              onRefresh={loadData}
+              onRefresh={handleRefresh}
             />
           ))
         )}
@@ -345,7 +312,7 @@ export default function ActionPlans({ githubUsername }: { githubUsername: string
           onClose={() => setShowCreateModal(false)}
           onComplete={() => {
             setShowCreateModal(false)
-            loadData()
+            invalidate()
           }}
         />
       )}
@@ -355,7 +322,7 @@ export default function ActionPlans({ githubUsername }: { githubUsername: string
 
 // --- Helper Components (Moved from JSX file and typed) ---
 
-function TaskCard({ task, planId, githubUsername, onComplete }: TaskCardProps) {
+function TaskCard({ task, planId, githubUsername, onComplete, onOptimisticComplete }: TaskCardProps) {
   const [completing, setCompleting] = useState(false)
   const [showFeedback, setShowFeedback] = useState(false)
   const [timeSpent, setTimeSpent] = useState<string>('')
@@ -367,6 +334,10 @@ function TaskCard({ task, planId, githubUsername, onComplete }: TaskCardProps) {
     if (task.status === 'completed') return
 
     setCompleting(true)
+
+    // Optimistic update
+    onOptimisticComplete(task.id, { status: 'completed' });
+
     try {
       const response = await axios.post(
         `${API_URL}/action-plans/${githubUsername}/${planId}/tasks/${task.id}/complete`,
@@ -382,6 +353,8 @@ function TaskCard({ task, planId, githubUsername, onComplete }: TaskCardProps) {
       onComplete()
     } catch (error) {
       console.error('Failed to complete task:', error)
+      // Revert optimistic update
+      onOptimisticComplete(task.id, { status: 'pending' });
       alert('Failed to complete task')
     } finally {
       setCompleting(false)
@@ -390,7 +363,7 @@ function TaskCard({ task, planId, githubUsername, onComplete }: TaskCardProps) {
 
   if (task.status === 'completed') {
     return (
-      <div className="bg-green-900/20 border border-green-500/40 rounded-xl p-4">
+      <div className="bg-green-500/10 border border-green-500/20 rounded-xl p-4 backdrop-blur-sm">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <CheckCircle className="w-6 h-6 text-green-400" />
@@ -408,13 +381,15 @@ function TaskCard({ task, planId, githubUsername, onComplete }: TaskCardProps) {
 
   if (showFeedback && feedback) {
     return (
-      <div className="bg-[#242424]/80 border border-[#933DC9]/50 rounded-xl p-4">
+      <div className="glass-card border-[#933DC9]/50 rounded-xl p-4">
         <div className="flex items-center mb-3">
           <Brain className="w-5 h-5 mr-2 text-[#C488F8]" />
           <h4 className="font-semibold text-[#C488F8]">AI Feedback</h4>
         </div>
         {/* Using MarkdownRenderer here to display the AI feedback content */}
-        <p className="text-sm text-[#FBFAEE]/70 leading-relaxed">{feedback}</p>
+        <div className="text-sm text-[#FBFAEE]/70 leading-relaxed prose prose-invert max-w-none">
+          <MarkdownRenderer content={feedback} />
+        </div>
         <button
           onClick={() => setShowFeedback(false)}
           className="mt-3 text-sm text-[#C488F8] hover:text-[#933DC9]"
@@ -426,19 +401,19 @@ function TaskCard({ task, planId, githubUsername, onComplete }: TaskCardProps) {
   }
 
   return (
-    <div className="bg-[#000000]/40 border border-[#242424]/60 rounded-xl p-4 hover:border-[#933DC9]/50 transition">
+    <div className="bg-black/20 border border-white/5 rounded-xl p-4 hover:border-[#933DC9]/50 transition-all hover:bg-black/30 group">
       <div className="flex items-start justify-between mb-3">
         <div className="flex-1">
-          <h4 className="font-semibold text-[#FBFAEE] mb-1">{task.title}</h4>
+          <h4 className="font-semibold text-[#FBFAEE] mb-1 group-hover:text-[#C488F8] transition-colors">{task.title}</h4>
           <p className="text-sm text-[#FBFAEE]/70">{task.description}</p>
           <div className="flex items-center space-x-3 mt-2 text-xs text-[#FBFAEE]/60">
             <span className="flex items-center">
               <Clock className="w-3 h-3 mr-1" />
               {task.estimated_time} mins
             </span>
-            <span className={`px-2 py-0.5 rounded ${task.difficulty === 'easy' ? 'bg-green-900/40 text-green-300 border border-green-500/40' :
-              task.difficulty === 'medium' ? 'bg-yellow-900/40 text-yellow-300 border border-yellow-500/40' :
-                'bg-red-900/40 text-red-300 border border-red-500/40'
+            <span className={`px-2 py-0.5 rounded ${task.difficulty === 'easy' ? 'bg-green-500/10 text-green-300 border border-green-500/20' :
+              task.difficulty === 'medium' ? 'bg-yellow-500/10 text-yellow-300 border border-yellow-500/20' :
+                'bg-red-500/10 text-red-300 border border-red-500/20'
               }`}>
               {task.difficulty}
             </span>
@@ -447,7 +422,7 @@ function TaskCard({ task, planId, githubUsername, onComplete }: TaskCardProps) {
       </div>
 
       {/* Complete Form */}
-      <div className="space-y-3 mt-4 pt-3 border-t border-[#242424]/50">
+      <div className="space-y-3 mt-4 pt-3 border-t border-white/5">
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-xs text-[#FBFAEE]/60 mb-1">Time Spent (mins)</label>
@@ -456,7 +431,7 @@ function TaskCard({ task, planId, githubUsername, onComplete }: TaskCardProps) {
               value={timeSpent}
               onChange={(e) => setTimeSpent(e.target.value)}
               placeholder={task.estimated_time.toString()}
-              className="w-full px-3 py-2 bg-[#000000]/50 border border-[#242424]/60 text-[#FBFAEE] rounded-lg text-sm focus:ring-1 focus:ring-[#933DC9]"
+              className="w-full px-3 py-2 bg-black/30 border border-white/10 text-[#FBFAEE] rounded-lg text-sm focus:ring-1 focus:ring-[#933DC9] focus:border-[#933DC9]/50 transition-all"
             />
           </div>
           <div>
@@ -467,7 +442,7 @@ function TaskCard({ task, planId, githubUsername, onComplete }: TaskCardProps) {
               max="5"
               value={difficulty}
               onChange={(e) => setDifficulty(parseInt(e.target.value))}
-              className="w-full px-3 py-2 bg-[#000000]/50 border border-[#242424]/60 text-[#FBFAEE] rounded-lg text-sm focus:ring-1 focus:ring-[#933DC9]"
+              className="w-full px-3 py-2 bg-black/30 border border-white/10 text-[#FBFAEE] rounded-lg text-sm focus:ring-1 focus:ring-[#933DC9] focus:border-[#933DC9]/50 transition-all"
             />
           </div>
         </div>
@@ -477,14 +452,14 @@ function TaskCard({ task, planId, githubUsername, onComplete }: TaskCardProps) {
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             placeholder="What did you learn? Any challenges?"
-            className="w-full px-3 py-2 bg-[#000000]/50 border border-[#242424]/60 text-[#FBFAEE] rounded-lg text-sm resize-none focus:ring-1 focus:ring-[#933DC9]"
+            className="w-full px-3 py-2 bg-black/30 border border-white/10 text-[#FBFAEE] rounded-lg text-sm resize-none focus:ring-1 focus:ring-[#933DC9] focus:border-[#933DC9]/50 transition-all"
             rows={2}
           />
         </div>
         <button
           onClick={handleComplete}
           disabled={completing}
-          className="w-full bg-gradient-to-r from-green-600 to-emerald-600 text-[#FBFAEE] py-2 rounded-lg font-semibold hover:brightness-110 transition disabled:opacity-50 text-sm flex items-center justify-center shadow-md"
+          className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-[#FBFAEE] py-2 rounded-lg font-semibold transition-all disabled:opacity-50 text-sm flex items-center justify-center shadow-md hover:shadow-lg active:scale-[0.98]"
         >
           {completing ? (
             <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -502,23 +477,23 @@ function TaskCard({ task, planId, githubUsername, onComplete }: TaskCardProps) {
 
 function PlanCard({ plan, expanded, onToggle, onRefresh }: PlanCardProps) {
   return (
-    <div className="bg-[#242424] border border-[#242424]/60 rounded-2xl overflow-hidden shadow-lg transition-all hover:shadow-xl hover:border-[#933DC9]/50">
-      <div className="p-5 cursor-pointer hover:bg-[#000000]/20 transition" onClick={onToggle}>
+    <div className="glass-card rounded-2xl overflow-hidden transition-all hover:shadow-xl hover:border-[#933DC9]/50 group">
+      <div className="p-5 cursor-pointer hover:bg-white/5 transition" onClick={onToggle}>
         <div className="flex items-start justify-between">
           <div className="flex items-start space-x-3 flex-1">
-            <div className="bg-gradient-to-r from-[#933DC9] to-[#53118F] p-3 rounded-xl">
+            <div className="bg-gradient-to-r from-[#933DC9] to-[#53118F] p-3 rounded-xl shadow-lg shadow-purple-500/10">
               <Target className="w-5 h-5 text-[#FBFAEE]" />
             </div>
             <div className="flex-1">
-              <h3 className="text-lg font-bold text-[#FBFAEE] mb-1">{plan.title}</h3>
+              <h3 className="text-lg font-bold text-[#FBFAEE] mb-1 group-hover:text-[#C488F8] transition-colors">{plan.title}</h3>
               <p className="text-sm text-[#FBFAEE]/70 mb-2">{plan.focus_area}</p>
               <div className="flex items-center space-x-3 text-xs text-[#FBFAEE]/60">
                 <span>Day {plan.current_day}/30</span>
                 <span>•</span>
                 <span>{plan.completion_percentage.toFixed(0)}% complete</span>
-                {plan.status === 'active' && <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-green-900/40 text-green-300 border border-green-500/40">Active</span>}
+                {plan.status === 'active' && <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-green-500/10 text-green-300 border border-green-500/20">Active</span>}
               </div>
-              <div className="mt-2 w-full bg-[#000000]/50 rounded-full h-2 overflow-hidden border border-[#242424]/40">
+              <div className="mt-2 w-full bg-black/30 rounded-full h-2 overflow-hidden border border-white/5">
                 <div
                   className="bg-gradient-to-r from-[#933DC9] to-[#53118F] h-2 rounded-full transition-all"
                   style={{ width: `${plan.completion_percentage}%` }}
@@ -531,14 +506,16 @@ function PlanCard({ plan, expanded, onToggle, onRefresh }: PlanCardProps) {
       </div>
 
       {expanded && (
-        <div className="px-5 pb-5 border-t border-[#242424]/50 pt-4">
+        <div className="px-5 pb-5 border-t border-white/5 pt-4 bg-black/10">
           {plan.ai_analysis && (
-            <div className="bg-[#000000]/40 rounded-xl p-4 mb-4 border border-[#242424]/40">
+            <div className="bg-black/20 rounded-xl p-4 mb-4 border border-white/5">
               <h4 className="text-sm font-semibold text-[#C488F8] mb-2 flex items-center">
                 <Brain className="w-4 h-4 mr-2" />
                 AI Analysis
               </h4>
-              <p className="text-sm text-[#FBFAEE]/70 line-clamp-3">{plan.ai_analysis}</p>
+              <div className="text-sm text-[#FBFAEE]/70 prose prose-invert max-w-none">
+                <MarkdownRenderer content={plan.ai_analysis} />
+              </div>
             </div>
           )}
 
@@ -557,7 +534,7 @@ function PlanCard({ plan, expanded, onToggle, onRefresh }: PlanCardProps) {
 
           <button
             onClick={onRefresh}
-            className="flex items-center space-x-2 text-xs text-[#FBFAEE]/60 hover:text-[#FBFAEE] mt-3"
+            className="flex items-center space-x-2 text-xs text-[#FBFAEE]/60 hover:text-[#FBFAEE] mt-3 transition-colors"
           >
             <RefreshCw className="w-3 h-3" />
             <span>Check for updates</span>
@@ -602,11 +579,11 @@ function CreatePlanModal({ githubUsername, onClose, onComplete }: CreatePlanModa
   }
 
   return (
-    <div className="fixed inset-0 bg-black/90 flex items-center justify-center p-4 z-50">
-      <div className="bg-[#242424] border border-[#242424]/60 rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-6 border-b border-[#242424]/60">
-          <h2 className="text-2xl font-bold text-[#FBFAEE]">Create 30-Day Action Plan</h2>
-          <button onClick={onClose} className="text-[#FBFAEE]/60 hover:text-[#FBFAEE]">
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
+      <div className="glass-card rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-white/10">
+        <div className="flex items-center justify-between p-6 border-b border-white/10">
+          <h2 className="text-2xl font-bold text-gradient">Create 30-Day Action Plan</h2>
+          <button onClick={onClose} className="text-[#FBFAEE]/60 hover:text-[#FBFAEE] transition-colors">
             <X className="w-6 h-6" />
           </button>
         </div>
@@ -622,7 +599,7 @@ function CreatePlanModal({ githubUsername, onClose, onComplete }: CreatePlanModa
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="e.g., Backend Development Mastery"
-              className="w-full px-4 py-2.5 bg-[#000000]/50 border border-[#242424]/60 text-[#FBFAEE] rounded-lg focus:ring-1 focus:ring-[#933DC9]"
+              className="w-full px-4 py-2.5 bg-black/30 border border-white/10 text-[#FBFAEE] rounded-lg focus:ring-1 focus:ring-[#933DC9] focus:border-[#933DC9]/50 transition-all"
               required
             />
           </div>
@@ -637,7 +614,7 @@ function CreatePlanModal({ githubUsername, onClose, onComplete }: CreatePlanModa
               value={focusArea}
               onChange={(e) => setFocusArea(e.target.value)}
               placeholder="e.g., Backend Development, System Design"
-              className="w-full px-4 py-2.5 bg-[#000000]/50 border border-[#242424]/60 text-[#FBFAEE] rounded-lg focus:ring-1 focus:ring-[#933DC9]"
+              className="w-full px-4 py-2.5 bg-black/30 border border-white/10 text-[#FBFAEE] rounded-lg focus:ring-1 focus:ring-[#933DC9] focus:border-[#933DC9]/50 transition-all"
               required
             />
           </div>
@@ -652,7 +629,7 @@ function CreatePlanModal({ githubUsername, onClose, onComplete }: CreatePlanModa
               value={skills}
               onChange={(e) => setSkills(e.target.value)}
               placeholder="e.g., Node.js, PostgreSQL, Docker (comma-separated)"
-              className="w-full px-4 py-2.5 bg-[#000000]/50 border border-[#242424]/60 text-[#FBFAEE] rounded-lg focus:ring-1 focus:ring-[#933DC9]"
+              className="w-full px-4 py-2.5 bg-black/30 border border-white/10 text-[#FBFAEE] rounded-lg focus:ring-1 focus:ring-[#933DC9] focus:border-[#933DC9]/50 transition-all"
               required
             />
           </div>
@@ -664,7 +641,7 @@ function CreatePlanModal({ githubUsername, onClose, onComplete }: CreatePlanModa
               <select
                 value={skillLevel}
                 onChange={(e) => setSkillLevel(e.target.value)}
-                className="w-full px-4 py-2.5 bg-[#000000]/50 border border-[#242424]/60 text-[#FBFAEE] rounded-lg focus:ring-1 focus:ring-[#933DC9] appearance-none"
+                className="w-full px-4 py-2.5 bg-black/30 border border-white/10 text-[#FBFAEE] rounded-lg focus:ring-1 focus:ring-[#933DC9] focus:border-[#933DC9]/50 transition-all appearance-none"
               >
                 <option value="beginner">Beginner</option>
                 <option value="intermediate">Intermediate</option>
@@ -680,7 +657,7 @@ function CreatePlanModal({ githubUsername, onClose, onComplete }: CreatePlanModa
                 step="0.5"
                 value={hoursPerDay}
                 onChange={(e) => setHoursPerDay(parseFloat(e.target.value))}
-                className="w-full px-4 py-2.5 bg-[#000000]/50 border border-[#242424]/60 text-[#FBFAEE] rounded-lg focus:ring-1 focus:ring-[#933DC9]"
+                className="w-full px-4 py-2.5 bg-black/30 border border-white/10 text-[#FBFAEE] rounded-lg focus:ring-1 focus:ring-[#933DC9] focus:border-[#933DC9]/50 transition-all"
               />
             </div>
           </div>
@@ -692,7 +669,7 @@ function CreatePlanModal({ githubUsername, onClose, onComplete }: CreatePlanModa
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="What do you want to achieve in 30 days?"
-              className="w-full px-4 py-2.5 bg-[#000000]/50 border border-[#242424]/60 text-[#FBFAEE] rounded-lg resize-none focus:ring-1 focus:ring-[#933DC9]"
+              className="w-full px-4 py-2.5 bg-black/30 border border-white/10 text-[#FBFAEE] rounded-lg resize-none focus:ring-1 focus:ring-[#933DC9] focus:border-[#933DC9]/50 transition-all"
               rows={3}
             />
           </div>
@@ -702,14 +679,14 @@ function CreatePlanModal({ githubUsername, onClose, onComplete }: CreatePlanModa
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 px-6 py-2.5 bg-[#000000]/40 text-[#FBFAEE]/80 rounded-xl font-semibold hover:bg-[#000000]/60 transition border border-[#242424]/50"
+              className="flex-1 px-6 py-2.5 bg-white/5 text-[#FBFAEE]/80 rounded-xl font-semibold hover:bg-white/10 transition border border-white/10"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={submitting || !title || !focusArea || !skills}
-              className="flex-1 bg-gradient-to-r from-[#933DC9] to-[#53118F] text-[#FBFAEE] px-6 py-2.5 rounded-xl font-semibold hover:brightness-110 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center shadow-lg"
+              className="flex-1 bg-gradient-to-r from-[#933DC9] to-[#53118F] text-[#FBFAEE] px-6 py-2.5 rounded-xl font-semibold hover:brightness-110 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center shadow-lg shadow-purple-500/20"
             >
               {submitting ? <Loader2 className="w-5 h-5 mr-2 animate-spin" /> : 'Generate Plan'}
             </button>

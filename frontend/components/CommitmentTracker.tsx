@@ -12,6 +12,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 interface CommitmentTrackerProps {
   githubUsername: string
   onReviewComplete: () => void
+  onCheckIn: () => void
 }
 
 interface StreakData {
@@ -25,7 +26,8 @@ interface StreakData {
 
 export default function CommitmentTracker({
   githubUsername,
-  onReviewComplete
+  onReviewComplete,
+  onCheckIn
 }: CommitmentTrackerProps) {
   const [todayCommitment, setTodayCommitment] = useState<any>(null)
   const [stats, setStats] = useState<any>(null)
@@ -99,47 +101,56 @@ export default function CommitmentTracker({
   return (
     <div className="space-y-4">
       {/* Today's Status Card */}
-      <div className="bg-[#242424] border border-[#242424]/50 rounded-2xl p-4">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-semibold text-[#FBFAEE]/70 uppercase tracking-wider">
-            Today
+      <div className="bg-[#242424] border border-[#242424]/50 rounded-2xl p-6 relative overflow-hidden group hover:border-[#933DC9]/30 transition-all">
+        <div className="absolute top-0 right-0 w-32 h-32 bg-[#933DC9]/10 rounded-full blur-[50px] -mr-16 -mt-16 pointer-events-none"></div>
+
+        <div className="flex items-center justify-between mb-4 relative z-10">
+          <h3 className="text-sm font-bold text-[#FBFAEE] uppercase tracking-wider flex items-center gap-2">
+            <CheckCircle className="w-4 h-4 text-[#933DC9]" />
+            Daily Commitment
           </h3>
           {todayCommitment?.has_commitment && (
-            <span className={`px-2 py-1 rounded-full text-xs font-semibold ${todayCommitment.shipped === true
-                ? 'bg-green-900/30 text-green-300'
-                : todayCommitment.shipped === false
-                  ? 'bg-red-900/30 text-red-300'
-                  : 'bg-[#933DC9]/20 text-[#C488F8]'
+            <span className={`px-3 py-1 rounded-full text-xs font-bold border ${todayCommitment.shipped === true
+              ? 'bg-green-900/20 text-green-400 border-green-500/30'
+              : todayCommitment.shipped === false
+                ? 'bg-red-900/20 text-red-400 border-red-500/30'
+                : 'bg-[#933DC9]/10 text-[#C488F8] border-[#933DC9]/30'
               }`}>
               {todayCommitment.shipped === true
-                ? 'Shipped ✓'
+                ? 'SHIPPED'
                 : todayCommitment.shipped === false
-                  ? 'Missed'
-                  : 'In Progress'}
+                  ? 'MISSED'
+                  : 'IN PROGRESS'}
             </span>
           )}
         </div>
 
         {todayCommitment?.has_commitment ? (
-          <>
-            <p className="text-sm text-[#FBFAEE]/80 mb-3 line-clamp-2 italic">
+          <div className="relative z-10">
+            <p className="text-lg text-[#FBFAEE] mb-4 font-medium leading-relaxed">
               "{todayCommitment.commitment}"
             </p>
 
             {todayCommitment.needs_review && (
               <button
                 onClick={() => setShowReviewModal(true)}
-                className="w-full bg-orange-600 text-[#FBFAEE] py-2 rounded-lg font-semibold hover:brightness-110 transition text-sm flex items-center justify-center space-x-2"
+                className="w-full bg-gradient-to-r from-orange-600 to-red-600 text-white py-3 rounded-xl font-bold hover:brightness-110 transition shadow-lg shadow-orange-900/20 flex items-center justify-center space-x-2"
               >
-                <Clock className="w-4 h-4" />
-                <span>Review Now</span>
+                <Clock className="w-5 h-5" />
+                <span>Review Day</span>
               </button>
             )}
-          </>
+          </div>
         ) : (
-          <div className="text-center py-3">
-            <Calendar className="w-8 h-8 text-[#FBFAEE]/30 mx-auto mb-2" />
-            <p className="text-xs text-[#FBFAEE]/60">No check-in today</p>
+          <div className="text-center py-2 relative z-10">
+            <p className="text-[#FBFAEE]/60 text-sm mb-4">No commitment set for today yet.</p>
+            <button
+              onClick={onCheckIn}
+              className="w-full bg-[#FBFAEE] text-black py-3 rounded-xl font-bold hover:bg-white transition shadow-lg shadow-white/10 flex items-center justify-center space-x-2 transform hover:scale-[1.02] active:scale-[0.98]"
+            >
+              <Flame className="w-5 h-5 text-orange-500" />
+              <span>Set Daily Commitment</span>
+            </button>
           </div>
         )}
       </div>
@@ -148,10 +159,10 @@ export default function CommitmentTracker({
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
             <Flame className={`w-12 h-12 ${streakData.at_risk
-                ? 'text-red-400 animate-pulse'
-                : streakData.current_streak > 0
-                  ? 'text-orange-400'
-                  : 'text-[#FBFAEE]/30'
+              ? 'text-red-400 animate-pulse'
+              : streakData.current_streak > 0
+                ? 'text-orange-400'
+                : 'text-[#FBFAEE]/30'
               }`} />
             <div>
               <div className="text-5xl font-bold text-[#FBFAEE] mb-1">
@@ -192,8 +203,8 @@ export default function CommitmentTracker({
           <div className="w-full bg-[#000000]/50 rounded-full h-2 overflow-hidden">
             <div
               className={`h-full rounded-full transition-all duration-500 ${streakData.current_streak === streakData.best_streak
-                  ? 'bg-gradient-to-r from-yellow-500 to-orange-500 animate-pulse'
-                  : 'bg-gradient-to-r from-orange-500 to-red-500'
+                ? 'bg-gradient-to-r from-yellow-500 to-orange-500 animate-pulse'
+                : 'bg-gradient-to-r from-orange-500 to-red-500'
                 }`}
               style={{
                 width: `${streakData.best_streak > 0
@@ -270,8 +281,8 @@ export default function CommitmentTracker({
               <button
                 onClick={() => setShipped(true)}
                 className={`flex-1 py-3 rounded-xl font-semibold transition ${shipped
-                    ? 'bg-gradient-to-r from-green-600 to-emerald-500 text-white'
-                    : 'bg-[#000000]/40 text-[#FBFAEE]/60 border border-[#242424]/60'
+                  ? 'bg-gradient-to-r from-green-600 to-emerald-500 text-white'
+                  : 'bg-[#000000]/40 text-[#FBFAEE]/60 border border-[#242424]/60'
                   }`}
               >
                 <CheckCircle className="w-5 h-5 mx-auto mb-1" />
@@ -280,8 +291,8 @@ export default function CommitmentTracker({
               <button
                 onClick={() => setShipped(false)}
                 className={`flex-1 py-3 rounded-xl font-semibold transition ${!shipped
-                    ? 'bg-gradient-to-r from-red-600 to-orange-600 text-white'
-                    : 'bg-[#000000]/40 text-[#FBFAEE]/60 border border-[#242424]/60'
+                  ? 'bg-gradient-to-r from-red-600 to-orange-600 text-white'
+                  : 'bg-[#000000]/40 text-[#FBFAEE]/60 border border-[#242424]/60'
                   }`}
               >
                 <XCircle className="w-5 h-5 mx-auto mb-1" />

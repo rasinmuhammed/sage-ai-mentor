@@ -20,7 +20,7 @@ export function useOptimizedQuery<T>({
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)
   const lastFetchTime = useRef<number>(0)
-  const intervalRef = useRef<NodeJS.Timeout>()
+  const intervalRef = useRef<NodeJS.Timeout | null>(null)
 
   const fetchData = useCallback(async (force = false) => {
     // Check if data is stale

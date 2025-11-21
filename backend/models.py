@@ -487,6 +487,9 @@ class MilestoneResponse(BaseModel):
     class Config:
         from_attributes = True
 
+class DatabaseConfig(BaseModel):
+    database_url: str
+    
 class GoalCreate(BaseModel):
     title: str
     description: str
@@ -608,9 +611,15 @@ class DailyTaskResponse(BaseModel):
     difficulty_rating: Optional[int]
     notes: Optional[str]
     ai_feedback: Optional[str]
+    action_plan_id: int
     
     class Config:
         from_attributes = True
+
+class TodaysTasksResponse(BaseModel):
+    day_number: int
+    tasks: List[DailyTaskResponse]
+    plan_progress: float
 
 class ActionPlanResponse(BaseModel):
     id: int
@@ -624,7 +633,7 @@ class ActionPlanResponse(BaseModel):
     current_day: int
     completion_percentage: float
     ai_analysis: Optional[str]
-    skills_to_focus: Optional[Dict]
+    skills_to_focus: Optional[List[Dict]]
     milestones: Optional[Dict]
     daily_tasks: List[DailyTaskResponse] = []
     

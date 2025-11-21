@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react'
 import axios from 'axios'
-import { History, MessageCircle, Calendar, Brain, Filter, X, ChevronDown, ChevronUp, Loader2, AlertCircle, CheckCircle, BarChart, AlertTriangle, Lightbulb } from 'lucide-react' // Added Loader2, AlertCircle
+import { History, MessageCircle, Calendar, Brain, Filter, X, ChevronDown, ChevronUp, Loader2, AlertCircle, CheckCircle, BarChart, AlertTriangle, Lightbulb, Target } from 'lucide-react' // Added Loader2, AlertCircle, Target
 import MarkdownRenderer from './MarkdownRenderer' // Ensure this uses #FBFAEE text color
 
 // Assuming API_URL is defined elsewhere or replace with actual URL
@@ -68,6 +68,7 @@ export default function InteractionHistory({ githubUsername, limit }: Interactio
     checkin: 'from-[#933DC9] to-[#53118F]', // Purple gradient for checkin
     analysis: 'from-[#933DC9] to-[#53118F]', // Purple gradient for analysis
     evening_review: 'from-[#933DC9] to-[#53118F]', // Purple gradient for review
+    plan_creation: 'from-[#933DC9] to-[#53118F]', // Purple gradient for plan creation
     default: 'from-[#933DC9] to-[#53118F]' // Default purple gradient
   }
 
@@ -76,6 +77,7 @@ export default function InteractionHistory({ githubUsername, limit }: Interactio
     checkin: Calendar,
     analysis: Brain,
     evening_review: CheckCircle, // Example icon for review
+    plan_creation: Target, // Target icon for plan creation
     default: Brain // Default icon
   }
 
@@ -145,7 +147,7 @@ export default function InteractionHistory({ githubUsername, limit }: Interactio
             <span className="text-sm text-[#FBFAEE]/70 font-medium">Filter by type:</span>
           </div>
           {/* Filter Buttons */}
-          {['all', 'chat', 'checkin', 'analysis', 'evening_review'].map((type) => ( // Added evening_review
+          {['all', 'chat', 'checkin', 'analysis', 'evening_review', 'plan_creation'].map((type) => ( // Added evening_review and plan_creation
             <button
               key={type}
               onClick={() => setFilterType(type)}

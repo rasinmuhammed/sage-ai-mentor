@@ -5,6 +5,7 @@ from agents import strategist, analyst, psychologist
 from typing import Dict, List
 import json
 from datetime import datetime, timedelta
+import asyncio
 
 class ActionPlanService:
     """AI-powered action plan generation and management"""
@@ -14,7 +15,7 @@ class ActionPlanService:
         self.analyst = analyst
         self.psychologist = psychologist
     
-    def generate_30_day_plan(
+    async def generate_30_day_plan(
         self, 
         user_context: Dict, 
         focus_area: str,
@@ -142,7 +143,7 @@ class ActionPlanService:
             verbose=True
         )
         
-        result = crew.kickoff()
+        result = await asyncio.to_thread(crew.kickoff)
         
         return self._parse_plan_result(str(result), focus_area, hours_per_day)
     
@@ -218,7 +219,7 @@ class ActionPlanService:
             'total_days': 30
         }
     
-    def generate_daily_task_details(self, plan: Dict, day: int, user_progress: Dict) -> Dict:
+    async def generate_daily_task_details(self, plan: Dict, day: int, user_progress: Dict) -> Dict:
         """Generate specific tasks for a given day"""
         
         task = Task(
@@ -254,7 +255,7 @@ class ActionPlanService:
             verbose=False
         )
         
-        result = crew.kickoff()
+        result = await asyncio.to_thread(crew.kickoff)
         
         return {
             'tasks': self._extract_tasks(str(result)),
@@ -292,7 +293,7 @@ class ActionPlanService:
                 return line.split(':', 1)[1].strip() if ':' in line else line
         return "Stay focused. Ship something today."
     
-    def evaluate_task_completion(self, task: Dict, user_feedback: Dict) -> Dict:
+    async def evaluate_task_completion(self, task: Dict, user_feedback: Dict) -> Dict:
         """Evaluate completed task and provide feedback"""
         
         feedback_task = Task(
@@ -323,7 +324,7 @@ class ActionPlanService:
             verbose=False
         )
         
-        result = crew.kickoff()
+        result = await asyncio.to_thread(crew.kickoff)
         
         return {
             'feedback': str(result),

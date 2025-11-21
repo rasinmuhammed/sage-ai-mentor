@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import axios from 'axios'
 import { UserButton } from '@clerk/nextjs'
 import {
   Brain, Target, MessageCircle,
@@ -23,7 +24,10 @@ import { updateOnboardingProgress } from '@/lib/onboardingStorage'
 import OnboardingCelebration from './OnboardingCelebration'
 import SettingsComponent from './Settings'
 import GradientLayout from './ui/GradientLayout'
-import { useDashboardData } from '@/hooks/useDashboardData'
+import { DashboardProvider, useDashboard } from '@/contexts/DashboardContext'
+import CommitmentTracker from './CommitmentTracker'
+import CommitmentCalendar from './CommitmentCalendar'
+import CommandPalette from './CommandPalette'
 
 interface DashboardProps {
   githubUsername: string
@@ -31,16 +35,67 @@ interface DashboardProps {
 
 type TabType = 'overview' | 'focus' | 'goals' | 'learning' | 'decisions' | 'chat' | 'notifications' | 'history' | 'settings'
 
-export default function Dashboard({ githubUsername }: DashboardProps) {
-  const { data, todayCommitment, activeGoals, loading, refresh } = useDashboardData(githubUsername)
+function DashboardContent({ githubUsername }: DashboardProps) {
+  const {
+    dashboardData: data,
+    todayCommitment,
+    activeGoals,
+    dailyTasks,
+    actionPlans,
+    loading,
+    refreshDashboard: refresh,
+    optimisticUpdateTask
+  } = useDashboard()
+
   const [showCheckin, setShowCheckin] = useState(false)
   const [activeTab, setActiveTab] = useState<TabType>('overview')
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [showCelebration, setShowCelebration] = useState(false)
+  const [showCommandPalette, setShowCommandPalette] = useState(false)
 
   useEffect(() => {
     checkOnboardingStatus()
   }, [githubUsername])
+
+  // Global Keyboard Shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore if typing in an input
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || (e.target as HTMLElement).isContentEditable) {
+        return
+      }
+
+      // Ignore if modifiers are pressed (except Shift for some cases if needed)
+      if (e.metaKey || e.ctrlKey || e.altKey) return
+
+      switch (e.key.toLowerCase()) {
+        case 'c':
+          e.preventDefault()
+          setShowCheckin(true)
+          break
+        case 'n':
+          e.preventDefault()
+          // Default to new goal for now, or toggle a choice
+          setActiveTab('goals')
+          break
+        case 'g':
+          e.preventDefault()
+          setActiveTab('goals')
+          break
+        case 'f':
+          e.preventDefault()
+          setActiveTab('focus')
+          break
+        case 'l':
+          e.preventDefault()
+          setActiveTab('learning')
+          break
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
 
   const checkOnboardingStatus = () => {
     if (typeof window !== 'undefined') {
@@ -84,6 +139,20 @@ export default function Dashboard({ githubUsername }: DashboardProps) {
     }
   }
 
+  const handleCommandAction = (action: string) => {
+    switch (action) {
+      case 'checkin':
+        setShowCheckin(true)
+        break
+      case 'new_goal':
+        setActiveTab('goals')
+        break
+      case 'new_plan':
+        setActiveTab('learning')
+        break
+    }
+  }
+
   if (loading) {
     return (
       <GradientLayout className="flex items-center justify-center">
@@ -95,11 +164,51 @@ export default function Dashboard({ githubUsername }: DashboardProps) {
     )
   }
 
+  // Handle error state (e.g. missing database configuration)
+  if (!data || !todayCommitment) {
+    return (
+      <GradientLayout className="flex items-center justify-center">
+        <div className="glass-card p-8 rounded-2xl max-w-md text-center">
+          <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Settings className="w-8 h-8 text-red-400" />
+          </div>
+          <h2 className="text-2xl font-bold text-[#FBFAEE] mb-2">Configuration Needed</h2>
+          <p className="text-[#FBFAEE]/60 mb-6">
+            We couldn't load your dashboard. This usually means your database connection hasn't been set up yet.
+          </p>
+          <button
+            onClick={() => setActiveTab('settings')}
+            className="px-6 py-3 bg-[#933DC9] hover:bg-[#7E34AB] text-white rounded-xl font-medium transition-colors flex items-center justify-center gap-2 mx-auto"
+          >
+            <Settings className="w-4 h-4" />
+            <span>Go to Settings</span>
+          </button>
+        </div>
+        {/* Render Settings if activeTab is settings (hacky but works for now to allow fixing) */}
+        {activeTab === 'settings' && (
+          <div className="fixed inset-0 z-50 bg-[#0A0A0A]">
+            <div className="p-4">
+              <button onClick={() => window.location.reload()} className="mb-4 text-[#FBFAEE]/60 hover:text-[#FBFAEE]">← Back</button>
+              <SettingsComponent githubUsername={githubUsername} />
+            </div>
+          </div>
+        )}
+      </GradientLayout>
+    )
+  }
+
   return (
     <GradientLayout className="h-screen flex flex-col">
       {showCelebration && (
         <OnboardingCelebration onClose={() => setShowCelebration(false)} />
       )}
+
+      <CommandPalette
+        open={showCommandPalette}
+        onOpenChange={setShowCommandPalette}
+        onNavigate={(tab) => setActiveTab(tab as TabType)}
+        onAction={handleCommandAction}
+      />
 
       {/* Header */}
       <header className="sticky top-0 z-40 glass border-b border-white/5">
@@ -128,8 +237,8 @@ export default function Dashboard({ githubUsername }: DashboardProps) {
                     key={tab.id}
                     onClick={() => setActiveTab(tab.id as TabType)}
                     className={`px-4 py-2 rounded-lg transition-all duration-300 flex items-center space-x-2 text-sm font-medium ${isActive
-                        ? 'bg-[#933DC9] text-white shadow-lg shadow-purple-500/30'
-                        : 'text-[#FBFAEE]/60 hover:text-[#FBFAEE] hover:bg-white/5'
+                      ? 'bg-[#933DC9] text-white shadow-lg shadow-purple-500/30'
+                      : 'text-[#FBFAEE]/60 hover:text-[#FBFAEE] hover:bg-white/5'
                       }`}
                   >
                     <Icon className={`w-4 h-4 ${isActive ? 'animate-pulse' : ''}`} />
@@ -176,8 +285,8 @@ export default function Dashboard({ githubUsername }: DashboardProps) {
                     setMobileMenuOpen(false)
                   }}
                   className={`w-full text-left px-4 py-3 rounded-xl flex items-center space-x-3 transition-all ${activeTab === tab.id
-                      ? 'bg-[#933DC9]/20 text-[#C488F8] border border-[#933DC9]/30'
-                      : 'text-[#FBFAEE]/80 hover:bg-white/5'
+                    ? 'bg-[#933DC9]/20 text-[#C488F8] border border-[#933DC9]/30'
+                    : 'text-[#FBFAEE]/80 hover:bg-white/5'
                     }`}
                 >
                   <Icon className="w-5 h-5" />
@@ -192,8 +301,8 @@ export default function Dashboard({ githubUsername }: DashboardProps) {
       {/* Main Content Area */}
       <main className="flex-1 overflow-hidden relative z-10">
         {/* Overview Tab */}
-        {activeTab === 'overview' && (
-          <div className="h-full overflow-y-auto p-4 sm:p-8 space-y-8 scrollbar-hide">
+        <div className={activeTab === 'overview' ? 'h-full block' : 'hidden'}>
+          <div className="h-full overflow-y-auto p-4 sm:p-8 space-y-8">
 
             {/* Daily Focus Hero Section */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -209,34 +318,91 @@ export default function Dashboard({ githubUsername }: DashboardProps) {
                 </h3>
 
                 <div className="space-y-4 relative z-10">
-                  {/* Learning Focus */}
-                  {data?.active_plan_task ? (
-                    <div
-                      className="bg-white/5 rounded-2xl p-5 border border-white/5 hover:border-[#933DC9]/50 transition-all duration-300 cursor-pointer group/item backdrop-blur-sm"
-                      onClick={() => setActiveTab('learning')}
-                    >
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center space-x-3">
-                          <span className="px-3 py-1 rounded-full bg-[#933DC9]/20 text-[#C488F8] text-xs font-bold border border-[#933DC9]/30 uppercase tracking-wider">Learning</span>
-                          <span className="text-xs text-[#FBFAEE]/50 font-medium">30-Day Plan • Day {data.active_plan_day}</span>
+                  {/* Daily Tasks from Action Plan */}
+                  <div className="bg-white/5 rounded-2xl p-5 border border-white/5 hover:border-[#933DC9]/50 transition-all duration-300 backdrop-blur-sm">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center space-x-3">
+                        <span className="px-3 py-1 rounded-full bg-[#933DC9]/20 text-[#C488F8] text-xs font-bold border border-[#933DC9]/30 uppercase tracking-wider">Action Plan</span>
+                        <span className="text-xs text-[#FBFAEE]/50 font-medium">Today's Tasks</span>
+                      </div>
+                      <button
+                        onClick={() => setActiveTab('learning')}
+                        className="text-xs text-[#C488F8] hover:text-white transition-colors flex items-center"
+                      >
+                        View Plan <ArrowRight className="w-3 h-3 ml-1" />
+                      </button>
+                    </div>
+
+                    {dailyTasks && dailyTasks.length > 0 ? (
+                      <div className="space-y-3">
+                        {dailyTasks.map((task: any) => (
+                          <div key={task.id} className="group flex items-start space-x-3 p-2 rounded-lg hover:bg-white/5 transition-colors">
+                            <button
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                if (task.status === 'completed') return;
+
+                                // Optimistic update
+                                optimisticUpdateTask(task.id, { status: 'completed' });
+
+                                try {
+                                  // Fallback to finding plan ID if missing on task object
+                                  const planId = task.action_plan_id || actionPlans.find((p: any) => p.daily_tasks?.some((t: any) => t.id === task.id))?.id;
+
+                                  if (!planId) {
+                                    console.error("Plan ID not found for task", task);
+                                    throw new Error("Plan ID not found");
+                                  }
+
+                                  await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/action-plans/${githubUsername}/${planId}/tasks/${task.id}/complete`, {
+                                    notes: "Completed from Dashboard"
+                                  });
+                                  // No need to refresh immediately if successful, but good to sync eventually
+                                  // refresh(); 
+                                } catch (err) {
+                                  console.error("Failed to complete task", err);
+                                  // Revert optimistic update on error
+                                  optimisticUpdateTask(task.id, { status: 'pending' });
+                                  alert("Failed to complete task. Please try again.");
+                                }
+                              }}
+                              className={`mt-1 w-5 h-5 rounded-full border flex items-center justify-center transition-all ${task.status === 'completed'
+                                ? 'bg-green-500 border-green-500 text-white'
+                                : 'border-[#FBFAEE]/30 hover:border-[#C488F8]'
+                                }`}
+                            >
+                              {task.status === 'completed' && <CheckCircle className="w-3 h-3" />}
+                            </button>
+                            <div className="flex-1">
+                              <p className={`text-sm font-medium transition-all ${task.status === 'completed' ? 'text-[#FBFAEE]/30 line-through' : 'text-[#FBFAEE]'
+                                }`}>
+                                {task.title}
+                              </p>
+                              <div className="flex items-center space-x-3 mt-1">
+                                <span className="text-xs text-[#FBFAEE]/40 flex items-center">
+                                  <Clock className="w-3 h-3 mr-1" /> {task.estimated_time}m
+                                </span>
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded uppercase tracking-wider ${task.difficulty === 'hard' ? 'bg-red-500/20 text-red-400' :
+                                  task.difficulty === 'medium' ? 'bg-orange-500/20 text-orange-400' :
+                                    'bg-green-500/20 text-green-400'
+                                  }`}>
+                                  {task.difficulty}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-6" onClick={() => setActiveTab('learning')}>
+                        <div className="p-3 bg-white/5 rounded-full mb-3 inline-flex">
+                          <BookOpen className="w-5 h-5 text-[#FBFAEE]/40" />
                         </div>
-                        <ArrowRight className="w-5 h-5 text-[#FBFAEE]/30 group-hover/item:text-[#C488F8] group-hover/item:translate-x-1 transition-all" />
+                        <p className="text-[#FBFAEE]/60 text-sm mb-2">No active tasks for today</p>
+                        <button className="text-xs text-[#C488F8] hover:underline">Create or view your plan</button>
                       </div>
-                      <h4 className="text-xl font-semibold text-[#FBFAEE] mb-2 group-hover/item:text-white transition-colors">{data.active_plan_task.title}</h4>
-                      <div className="flex items-center text-xs text-[#FBFAEE]/60 space-x-4">
-                        <span className="flex items-center bg-black/20 px-2 py-1 rounded-md"><Clock className="w-3 h-3 mr-1.5" /> {data.active_plan_task.estimated_time} mins</span>
-                        <span className="flex items-center bg-black/20 px-2 py-1 rounded-md"><Brain className="w-3 h-3 mr-1.5" /> {data.active_plan_focus}</span>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="bg-white/5 rounded-2xl p-8 border border-white/5 border-dashed flex flex-col items-center justify-center text-center hover:bg-white/10 transition-all cursor-pointer" onClick={() => setActiveTab('learning')}>
-                      <div className="p-3 bg-white/5 rounded-full mb-3">
-                        <BookOpen className="w-6 h-6 text-[#FBFAEE]/40" />
-                      </div>
-                      <p className="text-[#FBFAEE]/60 text-sm mb-4">No active learning plan</p>
-                      <button className="text-xs bg-[#933DC9] hover:bg-[#822eb5] text-white px-4 py-2 rounded-lg transition shadow-lg shadow-purple-500/20 font-medium">Start Learning Journey</button>
-                    </div>
-                  )}
+                    )}
+                  </div>
 
                   {/* Goal Focus */}
                   {activeGoals.length > 0 ? (
@@ -272,45 +438,14 @@ export default function Dashboard({ githubUsername }: DashboardProps) {
                 </div>
               </div>
 
-              {/* Quick Stats / Streak */}
+              {/* Quick Stats / Streak & Commitment Tracker */}
               <div className="space-y-6">
-                <div className="glass-card rounded-3xl p-6 relative overflow-hidden group hover-lift">
-                  <div className="absolute inset-0 bg-gradient-to-br from-orange-500/10 to-red-600/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
-                  <div className="flex items-center justify-between mb-4 relative z-10">
-                    <h3 className="font-bold text-[#FBFAEE]">Daily Streak</h3>
-                    <Flame className="w-5 h-5 text-orange-500 animate-pulse" />
-                  </div>
-                  <div className="text-center py-4 relative z-10">
-                    <div className="text-6xl font-black text-transparent bg-clip-text bg-gradient-to-b from-orange-400 to-red-600 drop-shadow-sm">
-                      {data?.user?.streak || 0}
-                    </div>
-                    <div className="text-sm text-[#FBFAEE]/60 mt-2 font-medium uppercase tracking-widest">days on fire</div>
-                  </div>
-                </div>
-
-                <div className="glass-card rounded-3xl p-6 relative overflow-hidden group hover-lift">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="font-bold text-[#FBFAEE]">Commitment</h3>
-                    <CheckCircle className="w-5 h-5 text-green-500" />
-                  </div>
-                  {todayCommitment ? (
-                    <div>
-                      <p className="text-lg text-[#FBFAEE] font-medium italic mb-4 leading-relaxed">"{todayCommitment.commitment}"</p>
-                      <div className={`text-xs font-bold px-3 py-1.5 rounded-full inline-flex items-center ${todayCommitment.shipped ? 'bg-green-500/20 text-green-400 border border-green-500/30' : 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30'}`}>
-                        <div className={`w-2 h-2 rounded-full mr-2 ${todayCommitment.shipped ? 'bg-green-400' : 'bg-yellow-400 animate-pulse'}`}></div>
-                        {todayCommitment.shipped ? 'COMPLETED' : 'IN PROGRESS'}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="text-center py-6">
-                      <p className="text-sm text-[#FBFAEE]/60 mb-4">No commitment set for today</p>
-                      <button onClick={() => setShowCheckin(true)} className="w-full text-sm bg-[#933DC9] hover:bg-[#822eb5] text-white px-4 py-3 rounded-xl transition shadow-lg shadow-purple-500/20 font-bold flex items-center justify-center">
-                        <CheckCircle className="w-4 h-4 mr-2" />
-                        Check In Now
-                      </button>
-                    </div>
-                  )}
-                </div>
+                <CommitmentTracker
+                  githubUsername={githubUsername}
+                  onReviewComplete={refresh}
+                  onCheckIn={() => setShowCheckin(true)}
+                />
+                <CommitmentCalendar githubUsername={githubUsername} />
               </div>
             </div>
 
@@ -351,10 +486,10 @@ export default function Dashboard({ githubUsername }: DashboardProps) {
               </div>
             </div>
           </div>
-        )}
+        </div>
 
         {/* Focus Tab */}
-        {activeTab === 'focus' && (
+        <div className={activeTab === 'focus' ? 'h-full block' : 'hidden'}>
           <div className="max-w-6xl mx-auto h-full overflow-y-auto p-4 sm:p-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <div className="mb-8">
               <h2 className="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-white to-white/60 mb-3">Focus Session</h2>
@@ -368,56 +503,56 @@ export default function Dashboard({ githubUsername }: DashboardProps) {
               checkinId={todayCommitment?.checkin_id}
             />
           </div>
-        )}
+        </div>
 
         {/* Goals Tab */}
-        {activeTab === 'goals' && (
+        <div className={activeTab === 'goals' ? 'h-full block' : 'hidden'}>
           <div className="h-full overflow-y-auto p-4 sm:p-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <Goals githubUsername={githubUsername} />
           </div>
-        )}
+        </div>
 
         {/* Learning Tab */}
-        {activeTab === 'learning' && (
+        <div className={activeTab === 'learning' ? 'h-full block' : 'hidden'}>
           <div className="h-full overflow-y-auto p-4 sm:p-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <ActionPlans githubUsername={githubUsername} />
           </div>
-        )}
+        </div>
 
         {/* Decisions Tab */}
-        {activeTab === 'decisions' && (
+        <div className={activeTab === 'decisions' ? 'h-full block' : 'hidden'}>
           <div className="h-full overflow-y-auto p-4 sm:p-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <LifeDecisions githubUsername={githubUsername} />
           </div>
-        )}
+        </div>
 
         {/* History Tab */}
-        {activeTab === 'history' && (
+        <div className={activeTab === 'history' ? 'h-full block' : 'hidden'}>
           <div className="h-full overflow-y-auto p-4 sm:p-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <InteractionHistory githubUsername={githubUsername} />
           </div>
-        )}
+        </div>
 
         {/* Chat Tab */}
-        {activeTab === 'chat' && (
+        <div className={activeTab === 'chat' ? 'h-full block' : 'hidden'}>
           <div className="max-w-6xl mx-auto h-full p-4 sm:p-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <Chat githubUsername={githubUsername} />
           </div>
-        )}
+        </div>
 
         {/* Settings Tab */}
-        {activeTab === 'settings' && (
+        <div className={activeTab === 'settings' ? 'h-full block' : 'hidden'}>
           <div className="h-full overflow-y-auto p-4 sm:p-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <SettingsComponent githubUsername={githubUsername} />
           </div>
-        )}
+        </div>
 
         {/* Notifications Tab */}
-        {activeTab === 'notifications' && (
+        <div className={activeTab === 'notifications' ? 'h-full block' : 'hidden'}>
           <div className="h-full overflow-y-auto p-4 sm:p-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <Notifications githubUsername={githubUsername} />
           </div>
-        )}
+        </div>
       </main>
 
       {showCheckin && (
@@ -432,5 +567,13 @@ export default function Dashboard({ githubUsername }: DashboardProps) {
         />
       )}
     </GradientLayout>
+  )
+}
+
+export default function Dashboard({ githubUsername }: DashboardProps) {
+  return (
+    <DashboardProvider githubUsername={githubUsername}>
+      <DashboardContent githubUsername={githubUsername} />
+    </DashboardProvider>
   )
 }

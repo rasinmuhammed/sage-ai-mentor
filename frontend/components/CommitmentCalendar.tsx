@@ -1,120 +1,53 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import axios from 'axios'
-import { Calendar, CheckCircle, XCircle, Circle, Loader2 } from 'lucide-react' // Added Loader2
-
-// Assuming API_URL is defined elsewhere or replace with actual URL
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-
-interface CommitmentDay {
-  date: string // Assuming 'YYYY-MM-DD' or similar parseable format
-  commitment: string | null
-  shipped: boolean | null // null means pending/not reviewed
-  energy: number
-}
+import { useEffect } from 'react'
+import { Calendar, CheckCircle, XCircle, Circle, Loader2, AlertCircle } from 'lucide-react'
+import { useDashboard } from '@/contexts/DashboardContext'
 
 interface CommitmentCalendarProps {
   githubUsername: string
 }
 
 export default function CommitmentCalendar({ githubUsername }: CommitmentCalendarProps) {
-  const [days, setDays] = useState<CommitmentDay[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null); // Added error state
+  const { commitmentCalendar: days, fetchCommitmentCalendar, loading: contextLoading, error: contextError } = useDashboard()
 
   useEffect(() => {
-    loadCalendarData()
-  }, [githubUsername])
+    fetchCommitmentCalendar()
+  }, [fetchCommitmentCalendar])
 
-  const loadCalendarData = async () => {
-    setLoading(true);
-    setError(null); // Reset error on new load attempt
-    try {
-      // Fetch last 35 days to potentially fill 5 weeks (7*5)
-      const response = await axios.get(`${API_URL}/checkins/${githubUsername}?limit=35`)
-      // Sort data by date ascending to fill calendar correctly
-      const sortedData = response.data.sort((a: any, b: any) =>
-        new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-      );
-
-      const formatted = sortedData.map((checkin: any) => ({
-        date: new Date(checkin.timestamp).toISOString().split('T')[0], // Store as YYYY-MM-DD
-        commitment: checkin.commitment,
-        shipped: checkin.shipped, // Keep null if not reviewed
-        energy: checkin.energy_level
-      }));
-
-      // Generate calendar grid (last 28 days shown, aligned to week start if needed)
-      const calendarDays = generateCalendarGrid(formatted);
-      setDays(calendarDays);
-
-    } catch (error) {
-      console.error('Failed to load calendar:', error)
-      setError('Could not load calendar data.'); // Set error message
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  // Helper function to generate a grid representing the last ~4 weeks
-  const generateCalendarGrid = (fetchedDays: CommitmentDay[]) => {
-    const grid: (CommitmentDay | { date: string, commitment: null, shipped: null, energy: 0 })[] = [];
-    const endDate = new Date();
-    // Start 4 weeks before the *end* of the current week to align grid nicely
-    const daysSinceSunday = endDate.getDay(); // 0 for Sunday, 6 for Saturday
-    const startDate = new Date(endDate);
-    startDate.setDate(endDate.getDate() - daysSinceSunday - (3 * 7)); // Start 3 full weeks before this Sunday
-    startDate.setHours(0, 0, 0, 0);
-
-    const fetchedDaysMap = new Map(fetchedDays.map(d => [d.date, d]));
-
-    for (let i = 0; i < 28; i++) { // Generate exactly 28 days for 4 full weeks
-      const currentDate = new Date(startDate);
-      currentDate.setDate(startDate.getDate() + i);
-      const dateString = currentDate.toISOString().split('T')[0];
-
-      if (fetchedDaysMap.has(dateString)) {
-        grid.push(fetchedDaysMap.get(dateString)!);
-      } else {
-        // Add placeholder for days with no data within the range
-        grid.push({ date: dateString, commitment: null, shipped: null, energy: 0 });
-      }
-    }
-    return grid;
-  };
-
-
-  // Function to return icon component based on shipped status
   const getDayIcon = (shipped: boolean | null) => {
-    if (shipped === true) return <CheckCircle className="w-5 h-5 text-green-400" /> // Kept green
-    if (shipped === false) return <XCircle className="w-5 h-5 text-red-400" /> // Kept red
-    return <Circle className="w-5 h-5 text-[#FBFAEE]/30" /> // Dimmed Floral White for pending/no data
+    if (shipped === true) return <CheckCircle className="w-5 h-5 text-green-400" />
+    if (shipped === false) return <XCircle className="w-5 h-5 text-red-400" />
+    return <Circle className="w-5 h-5 text-[#FBFAEE]/30" />
   }
 
-  // Function to return background based on shipped status for the calendar day square
   const getDayBgClass = (shipped: boolean | null, commitmentExists: boolean) => {
-    if (!commitmentExists) return 'bg-[#000000]/30'; // Darker for empty days
-    if (shipped === true) return 'bg-green-800/40 hover:bg-green-700/50'; // Green tint
-    if (shipped === false) return 'bg-red-800/40 hover:bg-red-700/50'; // Red tint
-    return 'bg-[#242424]/60 hover:bg-[#242424]/80'; // Default Raisin Black for pending
+    if (!commitmentExists) return 'bg-black/20'
+    if (shipped === true) return 'bg-green-500/20 hover:bg-green-500/30 border-green-500/30'
+    if (shipped === false) return 'bg-red-500/20 hover:bg-red-500/30 border-red-500/30'
+    return 'bg-[#933DC9]/20 hover:bg-[#933DC9]/30 border-[#933DC9]/30'
   }
+
+  // Use local loading state only if we have no data yet
+  const isLoading = contextLoading && days.length === 0
 
   return (
-    // Main container: Raisin Black background, Floral White text
-    <div className="bg-[#242424] border border-[#242424]/50 rounded-2xl shadow-xl p-6 text-[#FBFAEE]">
+    <div className="glass-card rounded-2xl shadow-xl p-6 text-[#FBFAEE] animate-in fade-in slide-in-from-bottom-4 duration-500 relative overflow-hidden group">
+      <div className="absolute top-0 right-0 w-64 h-64 bg-[#933DC9]/10 rounded-full blur-3xl -mr-32 -mt-32 pointer-events-none group-hover:bg-[#933DC9]/20 transition-all duration-500"></div>
+
       {/* Header */}
-      <div className="flex items-center mb-6">
-        {/* Icon with Purple Gradient */}
-        <div className="bg-gradient-to-br from-[#933DC9] to-[#53118F] p-2 rounded-lg mr-3 shadow-md">
+      <div className="flex items-center mb-6 relative z-10">
+        <div className="bg-gradient-to-br from-[#933DC9] to-[#53118F] p-2 rounded-lg mr-3 shadow-lg shadow-purple-500/20">
           <Calendar className="w-5 h-5 text-[#FBFAEE]" />
         </div>
-        <h3 className="text-xl font-bold text-[#FBFAEE]">Commitment Calendar</h3>
-        <span className="ml-2 text-xs text-[#FBFAEE]/60">(Last 4 Weeks)</span>
+        <div>
+          <h3 className="text-xl font-bold text-gradient">Commitment Calendar</h3>
+          <p className="text-xs text-[#FBFAEE]/60">Last 4 Weeks Performance</p>
+        </div>
       </div>
 
       {/* Loading State */}
-      {loading && (
+      {isLoading && (
         <div className="text-center py-12 text-[#FBFAEE]/70 flex flex-col items-center">
           <Loader2 className="w-6 h-6 animate-spin mb-2 text-[#933DC9]" />
           <span>Loading calendar...</span>
@@ -122,97 +55,93 @@ export default function CommitmentCalendar({ githubUsername }: CommitmentCalenda
       )}
 
       {/* Error State */}
-      {!loading && error && (
+      {!isLoading && contextError && days.length === 0 && (
         <div className="text-center py-12 text-red-400 flex flex-col items-center">
           <AlertCircle className="w-8 h-8 mb-2" />
-          <span>{error}</span>
+          <span>{contextError}</span>
           <button
-            onClick={loadCalendarData}
-            className="mt-4 px-4 py-1 bg-[#933DC9] text-[#FBFAEE] rounded-md text-sm hover:bg-[#7d34ad] transition"
+            onClick={() => fetchCommitmentCalendar(true)}
+            className="mt-4 px-4 py-1 bg-[#933DC9] text-[#FBFAEE] rounded-md text-sm hover:bg-[#7d34ad] transition shadow-lg shadow-purple-500/20"
           >
             Retry
           </button>
         </div>
       )}
 
-
       {/* Calendar Grid */}
-      {!loading && !error && days.length > 0 && (
-        <div className="grid grid-cols-7 gap-1.5 md:gap-2">
-          {/* Optional: Add weekday headers */}
+      {!isLoading && days.length > 0 && (
+        <div className="grid grid-cols-7 gap-2 md:gap-3 relative z-10">
           {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-            <div key={day} className="text-center text-xs text-[#FBFAEE]/50 pb-1">{day}</div>
+            <div key={day} className="text-center text-xs text-[#FBFAEE]/50 pb-1 font-medium uppercase tracking-wider">{day}</div>
           ))}
 
           {days.map((day, idx) => {
-            const commitmentExists = day.commitment !== null;
-            const dateObj = new Date(day.date + 'T00:00:00'); // Ensure correct date parsing
+            const commitmentExists = day.commitment !== null
+            const dateObj = new Date(day.date + 'T00:00:00')
 
-            // Tooltip text
             const tooltip = commitmentExists
               ? `${dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}: ${day.commitment}`
-              : `${dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}: No commitment`;
+              : `${dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}: No commitment`
 
             return (
               <div
                 key={idx}
-                className={`aspect-square ${getDayBgClass(day.shipped, commitmentExists)} border border-[#242424]/30 rounded-md flex flex-col items-center justify-center p-1 transition duration-150 group cursor-pointer relative`}
-                title={tooltip} // Use native title for simple tooltip
+                className={`aspect-square ${getDayBgClass(day.shipped, commitmentExists)} border border-white/5 rounded-xl flex flex-col items-center justify-center p-1 transition-all duration-200 group/day cursor-pointer relative hover:scale-105 hover:shadow-lg`}
+                title={tooltip}
               >
-                {/* Day Number */}
-                <span className={`text-xs absolute top-1 right-1 ${commitmentExists ? 'text-[#FBFAEE]/60' : 'text-[#FBFAEE]/30'}`}>
+                <span className={`text-xs absolute top-1 right-1.5 font-medium ${commitmentExists ? 'text-[#FBFAEE]/80' : 'text-[#FBFAEE]/30'}`}>
                   {dateObj.getDate()}
                 </span>
-                {/* Icon (only if commitment exists) */}
+
                 {commitmentExists && (
-                  <div className="mt-1">
+                  <div className="mt-1 transform group-hover/day:scale-110 transition-transform">
                     {getDayIcon(day.shipped)}
                   </div>
                 )}
 
-                {/* Optional: Show energy level visually */}
                 {commitmentExists && day.energy > 0 && (
-                  <div className="absolute bottom-1 left-1 right-1 h-0.5 rounded-full overflow-hidden bg-[#000000]/30">
+                  <div className="absolute bottom-1.5 left-1.5 right-1.5 h-1 rounded-full overflow-hidden bg-black/30">
                     <div
-                      className={`h-full ${day.energy <= 3 ? 'bg-red-500' : day.energy <= 6 ? 'bg-yellow-500' : 'bg-green-500'}`}
+                      className={`h-full ${day.energy <= 3 ? 'bg-red-500' : day.energy <= 6 ? 'bg-yellow-500' : 'bg-green-500'} shadow-[0_0_5px_rgba(255,255,255,0.3)]`}
                       style={{ width: `${day.energy * 10}%` }}
                       title={`Energy: ${day.energy}/10`}
                     ></div>
                   </div>
                 )}
               </div>
-            );
+            )
           })}
         </div>
       )}
 
-      {/* Empty state after loading */}
-      {!loading && !error && days.length === 0 && (
+      {/* Empty State */}
+      {!isLoading && !contextError && days.length === 0 && (
         <div className="text-center py-12 text-[#FBFAEE]/60">
           No commitment data found for the last month.
         </div>
       )}
 
-
       {/* Legend */}
-      <div className="mt-6 flex items-center justify-center space-x-4 text-sm text-[#FBFAEE]/70">
-        <div className="flex items-center">
-          <CheckCircle className="w-4 h-4 text-green-400 mr-1" />
-          <span>Shipped</span>
+      <div className="mt-6 flex flex-wrap items-center justify-center gap-4 text-sm text-[#FBFAEE]/70 relative z-10">
+        <div className="flex items-center bg-black/20 px-3 py-1.5 rounded-full border border-white/5">
+          <CheckCircle className="w-4 h-4 text-green-400 mr-1.5" />
+          <span className="text-xs font-medium">Shipped</span>
         </div>
-        <div className="flex items-center">
-          <XCircle className="w-4 h-4 text-red-400 mr-1" />
-          <span>Missed</span>
+        <div className="flex items-center bg-black/20 px-3 py-1.5 rounded-full border border-white/5">
+          <XCircle className="w-4 h-4 text-red-400 mr-1.5" />
+          <span className="text-xs font-medium">Missed</span>
         </div>
-        <div className="flex items-center">
-          <Circle className="w-4 h-4 text-[#FBFAEE]/30 mr-1" />
-          <span>Pending/None</span>
+        <div className="flex items-center bg-black/20 px-3 py-1.5 rounded-full border border-white/5">
+          <Circle className="w-4 h-4 text-[#FBFAEE]/30 mr-1.5" />
+          <span className="text-xs font-medium">Pending</span>
         </div>
-        <div className="flex items-center text-xs">
-          <span className="w-3 h-1.5 bg-red-500 rounded-l"></span>
-          <span className="w-3 h-1.5 bg-yellow-500"></span>
-          <span className="w-3 h-1.5 bg-green-500 rounded-r mr-1"></span>
-          <span>Energy</span>
+        <div className="flex items-center bg-black/20 px-3 py-1.5 rounded-full border border-white/5">
+          <div className="flex space-x-0.5 mr-2">
+            <span className="w-1.5 h-3 bg-red-500 rounded-sm"></span>
+            <span className="w-1.5 h-3 bg-yellow-500 rounded-sm"></span>
+            <span className="w-1.5 h-3 bg-green-500 rounded-sm"></span>
+          </div>
+          <span className="text-xs font-medium">Energy</span>
         </div>
       </div>
     </div>

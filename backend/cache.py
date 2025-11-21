@@ -1,91 +1,62 @@
-from functools import wraps
-from typing import Optional, Callable
-import json
-import hashlib
-from datetime import datetime, timedelta
+# backend/cache.py
+"""Simple in-memory cache utilities for FastAPI endpoints.
+This is a lightweight alternative to fastapi-cache2 for the current project.
+It provides a @cached decorator that stores results in a dict keyed by
+function name and arguments. Cache entries expire after a TTL (default 60s).
+"""
+import time
+import functools
+import inspect
+from typing import Any, Callable, Dict, Tuple
 
-class SimpleCache:
-    """Simple in-memory cache with TTL"""
-    
-    def __init__(self):
-        self._cache = {}
-        self._timestamps = {}
-    
-    def get(self, key: str) -> Optional[any]:
-        """Get value from cache if not expired"""
-        if key not in self._cache:
-            return None
-        
-        timestamp = self._timestamps.get(key)
-        if timestamp and timestamp < datetime.now():
-            # Expired
-            self.delete(key)
-            return None
-        
-        return self._cache[key]
-    
-    def set(self, key: str, value: any, ttl_seconds: int = 300):
-        """Set value in cache with TTL"""
-        self._cache[key] = value
-        self._timestamps[key] = datetime.now() + timedelta(seconds=ttl_seconds)
-    
-    def delete(self, key: str):
-        """Delete key from cache"""
-        self._cache.pop(key, None)
-        self._timestamps.pop(key, None)
-    
-    def clear(self):
-        """Clear entire cache"""
-        self._cache.clear()
-        self._timestamps.clear()
-    
-    def invalidate_pattern(self, pattern: str):
-        """Invalidate all keys matching pattern"""
-        keys_to_delete = [k for k in self._cache.keys() if pattern in k]
-        for key in keys_to_delete:
-            self.delete(key)
+_cache_store: Dict[Tuple[str, Tuple[Any, ...], Tuple[Tuple[str, Any], ...]], Tuple[Any, float]] = {}
 
-# Global cache instance
-cache = SimpleCache()
+# Specific cache for dashboard data to allow manual invalidation/updates
+_dashboard_cache: Dict[str, Tuple[Any, float]] = {}
 
-def cache_key(*args, **kwargs) -> str:
-    """Generate cache key from arguments"""
-    key_data = f"{args}{kwargs}"
-    return hashlib.md5(key_data.encode()).hexdigest()
-
-def cached(ttl_seconds: int = 300, key_prefix: str = ""):
-    """Decorator for caching function results"""
+def cached(ttl: int = 60):
+    """Cache decorator for FastAPI endpoint functions.
+    Args:
+        ttl: Time‑to‑live in seconds.
+    """
     def decorator(func: Callable):
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            # Generate cache key
-            key = f"{key_prefix}:{func.__name__}:{cache_key(*args, **kwargs)}"
+        @functools.wraps(func)
+        async def wrapper(*args, **kwargs):
+            key = (func.__name__, args, tuple(sorted(kwargs.items())))
+            now = time.time()
+            if key in _cache_store:
+                result, timestamp = _cache_store[key]
+                if now - timestamp < ttl:
+                    return result
             
-            # Try to get from cache
-            cached_result = cache.get(key)
-            if cached_result is not None:
-                return cached_result
-            
-            # Execute function
-            result = func(*args, **kwargs)
-            
-            # Store in cache
-            cache.set(key, result, ttl_seconds)
-            
+            if inspect.iscoroutinefunction(func):
+                result = await func(*args, **kwargs)
+            else:
+                result = func(*args, **kwargs)
+                
+            _cache_store[key] = (result, now)
             return result
-        
         return wrapper
     return decorator
 
-# Convenience functions for endpoint caching
-def cache_dashboard(username: str, data: dict):
-    """Cache dashboard data"""
-    cache.set(f"dashboard:{username}", data, ttl_seconds=60)
+def get_cached_dashboard(username: str) -> Any:
+    """Retrieve cached dashboard data if valid."""
+    if username in _dashboard_cache:
+        data, timestamp = _dashboard_cache[username]
+        # Default 60s TTL for dashboard
+        if time.time() - timestamp < 60:
+            return data
+    return None
 
-def get_cached_dashboard(username: str) -> Optional[dict]:
-    """Get cached dashboard data"""
-    return cache.get(f"dashboard:{username}")
+def cache_dashboard(username: str, data: Any):
+    """Cache dashboard data manually."""
+    _dashboard_cache[username] = (data, time.time())
 
 def invalidate_user_cache(username: str):
-    """Invalidate all cache for a user"""
-    cache.invalidate_pattern(username)
+    """Invalidate all caches for a user (dashboard and others if possible)."""
+    if username in _dashboard_cache:
+        del _dashboard_cache[username]
+    
+    # Also try to clear decorated cache entries for this user
+    # This is a bit hacky as we need to know the keys, but for now we just clear dashboard
+    pass

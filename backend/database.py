@@ -1,99 +1,163 @@
-from sqlalchemy import create_engine, event, text, Engine
+from sqlalchemy import event, text, Engine
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, AsyncEngine
 from sqlalchemy.orm import declarative_base, sessionmaker
-from sqlalchemy.pool import QueuePool
+from sqlalchemy.pool import AsyncAdaptedQueuePool
+from fastapi import Depends, HTTPException
 import os
 from dotenv import load_dotenv
-import logging
 
-# Load environment variables
 load_dotenv()
 
-# --- Configuration ---
-# Neon/Postgres requires 'postgresql://', but dashboard often gives 'postgres://'
+# --- Configuration Helpers ---
 def fix_db_url(url: str) -> str:
-    if url and url.startswith("postgres://"):
-        return url.replace("postgres://", "postgresql://", 1)
+    """Ensure URL is compatible with SQLAlchemy Async (postgres -> postgresql+asyncpg)"""
+    if url:
+        # Replace postgres:// or postgresql:// with postgresql+asyncpg://
+        if url.startswith("postgres://"):
+            return url.replace("postgres://", "postgresql+asyncpg://", 1)
+        elif url.startswith("postgresql://"):
+            return url.replace("postgresql://", "postgresql+asyncpg://", 1)
     return url
 
-# --- System Database (Local/Internal or Neon) ---
-# You can set this to a Neon URL in .env if you want the System DB on Neon too
-SYSTEM_DATABASE_URL = fix_db_url(os.getenv("SYSTEM_DATABASE_URL", "sqlite:///./sage.db"))
+# --- System Database (Internal) ---
+# For SQLite, we use aiosqlite driver
+SYSTEM_DATABASE_URL = os.getenv("SYSTEM_DATABASE_URL", "sqlite+aiosqlite:///./sage.db")
 
-def get_system_engine_args(url):
-    if url.startswith("sqlite"):
-        return {"connect_args": {"check_same_thread": False}}
-    
-    # Args for Neon/Postgres
-    return {
-        "pool_size": 5,
-        "max_overflow": 10,
-        "pool_pre_ping": True, # Vital for Neon serverless (disconnects idle)
-        "pool_recycle": 300,
-        "connect_args": {
-            "sslmode": "require",
-            "connect_timeout": 10
-        }
-    }
+if not SYSTEM_DATABASE_URL.startswith("sqlite"):
+     # Fallback logic if needed, but for now assuming sqlite+aiosqlite
+     pass
 
-system_engine = create_engine(SYSTEM_DATABASE_URL, **get_system_engine_args(SYSTEM_DATABASE_URL))
-SystemSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=system_engine)
+system_engine = create_async_engine(
+    SYSTEM_DATABASE_URL,
+    connect_args={"check_same_thread": False} if "sqlite" in SYSTEM_DATABASE_URL else {}
+)
+SystemSessionLocal = sessionmaker(
+    bind=system_engine, 
+    class_=AsyncSession, 
+    expire_on_commit=False,
+    autocommit=False, 
+    autoflush=False
+)
 SystemBase = declarative_base()
 
-def get_system_db():
-    db = SystemSessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+async def get_system_db():
+    async with SystemSessionLocal() as db:
+        try:
+            yield db
+        finally:
+            await db.close()
 
-def init_system_db():
-    """Initialize system database tables"""
-    SystemBase.metadata.create_all(bind=system_engine)
-    print("✓ System database initialized")
+async def init_system_db():
+    async with system_engine.begin() as conn:
+        await conn.run_sync(SystemBase.metadata.create_all)
+    print("✓ System database initialized (Async)")
 
-# --- User Database (Dynamic/Neon) ---
+# --- User Database (Neon/Postgres) ---
 UserBase = declarative_base()
 
-def get_user_db_engine(database_url: str):
-    """Create a dynamic engine for the user's Neon database"""
+# Engine cache to prevent creating new pools for every request
+_engine_cache = {}
+
+def get_user_db_engine(database_url: str) -> AsyncEngine:
+    """Create or retrieve a dynamic async engine for the user's database"""
     if not database_url:
         raise ValueError("Database URL is required")
     
-    # Fix protocol for SQLAlchemy
     clean_url = fix_db_url(database_url)
-        
+    
+    # Return cached engine if available
+    if clean_url in _engine_cache:
+        return _engine_cache[clean_url]
+    
+    # Fix for asyncpg: remove sslmode and channel_binding from URL and pass ssl='require' in connect_args
+    # asyncpg does not support 'sslmode' or 'channel_binding' in the connection string/kwargs
+    if "?" in clean_url:
+        base, query = clean_url.split("?", 1)
+        params = query.split("&")
+        # Filter out sslmode and channel_binding
+        params = [p for p in params if not p.startswith("sslmode=") and not p.startswith("channel_binding=")]
+        if params:
+            clean_url = f"{base}?{'&'.join(params)}"
+        else:
+            clean_url = base
+
+    # CRITICAL: Neon requires SSL.
     connect_args = {}
-    # Neon requires SSL
-    if clean_url.startswith("postgresql"):
+    if "postgresql" in clean_url:
         connect_args = {
-            "connect_timeout": 10,
-            "sslmode": "require"
+            "server_settings": {
+                "jit": "off" # Optimization for asyncpg
+            },
+            "ssl": "require"
         }
 
-    return create_engine(
+    engine = create_async_engine(
         clean_url,
-        poolclass=QueuePool,
-        pool_size=10,         # Keep active connections low for serverless
-        max_overflow=20,      # Allow bursts
-        pool_pre_ping=True,   # CRITICAL: Checks if connection is alive before using
-        pool_recycle=1800,    # Recycle connections every 30 mins
+        poolclass=AsyncAdaptedQueuePool,
+        pool_size=20,
+        max_overflow=30,
+        pool_pre_ping=True,
+        pool_recycle=300,
         connect_args=connect_args
     )
+    
+    # Cache the engine
+    _engine_cache[clean_url] = engine
+    return engine
 
-# --- Optimizations ---
+# --- Initialization Helpers ---
+_initialized_dbs = set()
 
-# Optimize PostgreSQL settings for user connections
-@event.listens_for(Engine, "connect")
-def receive_connect(dbapi_conn, connection_record):
+def _tables_initialized(db_url: str) -> bool:
+    return db_url in _initialized_dbs
+
+def _mark_tables_initialized(db_url: str):
+    _initialized_dbs.add(db_url)
+
+async def init_user_db(db_url: str):
+    """Helper to initialize tables in a user's Neon DB (Async)"""
     try:
-        # Only run this for Postgres connections (Neon)
-        if hasattr(dbapi_conn, 'info') and hasattr(dbapi_conn.info, 'dbname'):
-             with dbapi_conn.cursor() as cursor:
-                # Optimize for analytical/agent workloads
-                cursor.execute("SET work_mem = '64MB'")
-                cursor.execute("SET jit = on")
-                # Optional: Set statement timeout to prevent hanging queries
-                cursor.execute("SET statement_timeout = '60s'")
+        engine = get_user_db_engine(db_url)
+        async with engine.begin() as conn:
+            await conn.run_sync(UserBase.metadata.create_all)
+        _mark_tables_initialized(db_url)
+        print(f"✓ Initialized tables for {db_url}")
     except Exception as e:
-        # Fail silently for SQLite or if permissions are denied
-        pass
+        print(f"❌ Failed to initialize tables: {e}")
+        raise
+
+async def get_user_db(github_username: str, system_db: AsyncSession = Depends(get_system_db)):
+    """
+    Robust dependency to get User DB AsyncSession.
+    """
+    # Local import to avoid circular dependency
+    import models
+    from sqlalchemy import select
+    
+    # Async query
+    result = await system_db.execute(select(models.User).filter(models.User.github_username == github_username))
+    user = result.scalars().first()
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    if not user.neon_db_url:
+        raise HTTPException(
+            status_code=400, 
+            detail="Database not configured. Please complete onboarding."
+        )
+        
+    engine = get_user_db_engine(user.neon_db_url)
+    SessionLocal = sessionmaker(
+        bind=engine, 
+        class_=AsyncSession, 
+        expire_on_commit=False,
+        autocommit=False, 
+        autoflush=False
+    )
+    
+    async with SessionLocal() as db:
+        try:
+            yield db
+        finally:
+            await db.close()

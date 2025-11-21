@@ -1,4 +1,5 @@
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from datetime import datetime, timedelta
 import models
 from typing import Dict, Optional
@@ -7,8 +8,8 @@ class NotificationService:
     """Service for creating and managing notifications"""
     
     @staticmethod
-    def create_notification(
-        db: Session,
+    async def create_notification(
+        db: AsyncSession,
         user_id: int,
         title: str,
         message: str,
@@ -28,42 +29,44 @@ class NotificationService:
             extra_data=metadata or {}  # Use extra_data instead of metadata
         )
         db.add(notification)
-        db.commit()
-        db.refresh(notification)
+        await db.commit()
+        await db.refresh(notification)
         return notification
     
     @staticmethod
-    def check_commitment_reminder(db: Session, user_id: int) -> Optional[models.Notification]:
+    async def check_commitment_reminder(db: AsyncSession, user_id: int) -> Optional[models.Notification]:
         """Check if user needs a commitment reminder and create notification if needed"""
         today_start = datetime.combine(datetime.now().date(), datetime.min.time())
         today_end = datetime.combine(datetime.now().date(), datetime.max.time())
         current_hour = datetime.now().hour
         
         # Check if there's a commitment today that needs review
-        checkin = db.query(models.CheckIn).filter(
+        result = await db.execute(select(models.CheckIn).filter(
             models.CheckIn.user_id == user_id,
             models.CheckIn.timestamp >= today_start,
             models.CheckIn.timestamp <= today_end,
             models.CheckIn.shipped == None
-        ).first()
+        ))
+        checkin = result.scalars().first()
         
         if not checkin:
             return None
         
         # Check if notification already exists today
-        existing = db.query(models.Notification).filter(
+        result = await db.execute(select(models.Notification).filter(
             models.Notification.user_id == user_id,
             models.Notification.notification_type == 'commitment_reminder',
             models.Notification.created_at >= today_start,
             models.Notification.read == False
-        ).first()
+        ))
+        existing = result.scalars().first()
         
         if existing:
             return None
         
         # Create notification based on time
         if current_hour >= 20:  # 8 PM - Urgent
-            return NotificationService.create_notification(
+            return await NotificationService.create_notification(
                 db=db,
                 user_id=user_id,
                 title="⚠️ Did you ship today?",
@@ -74,7 +77,7 @@ class NotificationService:
                 metadata={"checkin_id": checkin.id, "commitment": checkin.commitment}
             )
         elif current_hour >= 18:  # 6 PM - High priority
-            return NotificationService.create_notification(
+            return await NotificationService.create_notification(
                 db=db,
                 user_id=user_id,
                 title="🔔 Review your commitment",
@@ -88,35 +91,65 @@ class NotificationService:
         return None
     
     @staticmethod
-    def check_goal_milestones(db: Session, user_id: int):
+    async def check_goal_milestones(db: AsyncSession, user_id: int):
         """Check for goal milestones and create notifications"""
         # Get goals with upcoming milestones (within 7 days)
         week_ahead = datetime.now() + timedelta(days=7)
         
-        milestones = db.query(models.Milestone).join(models.Goal).filter(
+        result = await db.execute(select(models.Milestone).join(models.Goal).filter(
             models.Goal.user_id == user_id,
             models.Goal.status == 'active',
             models.Milestone.achieved == False,
             models.Milestone.target_date <= week_ahead,
             models.Milestone.target_date >= datetime.now()
-        ).all()
+        ))
+        milestones = result.scalars().all()
         
         for milestone in milestones:
             # Check if notification already exists
-            existing = db.query(models.Notification).filter(
+            # Note: extra_data['milestone_id'].astext usage depends on DB dialect (Postgres)
+            # For asyncpg/SQLAlchemy, we might need cast or just check in python if list is small
+            # Or use proper JSON operators. For simplicity, let's query and filter in python if needed
+            # But let's try to use the JSON operator if possible.
+            # However, `astext` is specific to Postgres JSONB.
+            # Let's assume we can query by JSON field if supported, or just check existence.
+            
+            # Safer approach for cross-DB compatibility (or just simplicity):
+            # Check if we notified about this milestone recently (e.g. today)
+            # Or fetch recent notifications and check in memory.
+            
+            # Let's try to filter by notification_type and iterate to check metadata
+            # to avoid complex JSON queries for now.
+            
+            result = await db.execute(select(models.Notification).filter(
                 models.Notification.user_id == user_id,
                 models.Notification.notification_type == 'goal_milestone',
-                models.Notification.extra_data['milestone_id'].astext == str(milestone.id),
                 models.Notification.read == False
-            ).first()
+            ))
+            existing_notifs = result.scalars().all()
             
-            if not existing:
+            already_notified = False
+            for notif in existing_notifs:
+                if notif.extra_data and str(notif.extra_data.get('milestone_id')) == str(milestone.id):
+                    already_notified = True
+                    break
+            
+            if not already_notified:
+                # Need to fetch goal to get progress, milestone.goal might not be loaded if lazy
+                # But we joined in the query, so it might be loaded if we used contains_eager or similar
+                # Or we can just fetch it.
+                # Let's fetch it to be safe or rely on lazy loading if async session supports it (it requires await)
+                # AsyncSession requires explicit loading or awaitable attributes.
+                # Let's fetch the goal.
+                result = await db.execute(select(models.Goal).filter(models.Goal.id == milestone.goal_id))
+                goal = result.scalars().first()
+                
                 days_left = (milestone.target_date - datetime.now()).days
-                NotificationService.create_notification(
+                await NotificationService.create_notification(
                     db=db,
                     user_id=user_id,
                     title=f"🎯 Milestone approaching: {milestone.title}",
-                    message=f"{days_left} days until target date. Current goal progress: {milestone.goal.progress:.0f}%",
+                    message=f"{days_left} days until target date. Current goal progress: {goal.progress:.0f}%",
                     notification_type="goal_milestone",
                     priority="normal" if days_left > 3 else "high",
                     action_url=f"/goals",
@@ -124,13 +157,14 @@ class NotificationService:
                 )
     
     @staticmethod
-    def check_streak_achievements(db: Session, user_id: int):
+    async def check_streak_achievements(db: AsyncSession, user_id: int):
         """Check for streak achievements and celebrate them"""
         # Get recent check-ins to calculate streak
-        recent_checkins = db.query(models.CheckIn).filter(
+        result = await db.execute(select(models.CheckIn).filter(
             models.CheckIn.user_id == user_id,
             models.CheckIn.shipped != None
-        ).order_by(models.CheckIn.timestamp.desc()).limit(10).all()
+        ).order_by(models.CheckIn.timestamp.desc()).limit(10))
+        recent_checkins = result.scalars().all()
         
         if not recent_checkins:
             return
@@ -149,14 +183,15 @@ class NotificationService:
         if current_streak in milestone_streaks:
             # Check if we already celebrated this
             today_start = datetime.combine(datetime.now().date(), datetime.min.time())
-            existing = db.query(models.Notification).filter(
+            result = await db.execute(select(models.Notification).filter(
                 models.Notification.user_id == user_id,
                 models.Notification.notification_type == 'achievement',
                 models.Notification.created_at >= today_start
-            ).first()
+            ))
+            existing = result.scalars().first()
             
             if not existing:
-                NotificationService.create_notification(
+                await NotificationService.create_notification(
                     db=db,
                     user_id=user_id,
                     title=f"🔥 {current_streak}-Day Streak!",
@@ -168,16 +203,17 @@ class NotificationService:
                 )
     
     @staticmethod
-    def check_pattern_alerts(db: Session, user_id: int):
+    async def check_pattern_alerts(db: AsyncSession, user_id: int):
         """Check for negative patterns and alert user"""
         week_ago = datetime.now() - timedelta(days=7)
         
         # Get week's check-ins
-        checkins = db.query(models.CheckIn).filter(
+        result = await db.execute(select(models.CheckIn).filter(
             models.CheckIn.user_id == user_id,
             models.CheckIn.timestamp >= week_ago,
             models.CheckIn.shipped != None
-        ).all()
+        ))
+        checkins = result.scalars().all()
         
         if len(checkins) < 3:
             return
@@ -190,14 +226,15 @@ class NotificationService:
             if sum(recent_energy) / 3 < sum(older_energy) / 3 - 2:
                 # Check if we already alerted recently
                 three_days_ago = datetime.now() - timedelta(days=3)
-                existing = db.query(models.Notification).filter(
+                result = await db.execute(select(models.Notification).filter(
                     models.Notification.user_id == user_id,
                     models.Notification.notification_type == 'pattern_alert',
                     models.Notification.created_at >= three_days_ago
-                ).first()
+                ))
+                existing = result.scalars().first()
                 
                 if not existing:
-                    NotificationService.create_notification(
+                    await NotificationService.create_notification(
                         db=db,
                         user_id=user_id,
                         title="⚠️ Energy Levels Declining",
@@ -211,14 +248,15 @@ class NotificationService:
         # Check for consistent failures
         recent_fails = sum(1 for c in checkins[-5:] if c.shipped is False)
         if recent_fails >= 3:
-            existing = db.query(models.Notification).filter(
+            result = await db.execute(select(models.Notification).filter(
                 models.Notification.user_id == user_id,
                 models.Notification.notification_type == 'pattern_alert',
                 models.Notification.created_at >= week_ago
-            ).first()
+            ))
+            existing = result.scalars().first()
             
             if not existing:
-                NotificationService.create_notification(
+                await NotificationService.create_notification(
                     db=db,
                     user_id=user_id,
                     title="📉 Multiple Missed Commitments",
@@ -230,7 +268,7 @@ class NotificationService:
                 )
     
     @staticmethod
-    def check_decision_reflection(db: Session, user_id: int):
+    async def check_decision_reflection(db: AsyncSession, user_id: int):
         """Remind user to reflect on past decisions"""
         # Get decisions from 30, 60, 90 days ago
         reflection_periods = [30, 60, 90]
@@ -240,23 +278,32 @@ class NotificationService:
             date_range_start = target_date - timedelta(days=2)
             date_range_end = target_date + timedelta(days=2)
             
-            decisions = db.query(models.LifeEvent).filter(
+            result = await db.execute(select(models.LifeEvent).filter(
                 models.LifeEvent.user_id == user_id,
                 models.LifeEvent.timestamp >= date_range_start,
                 models.LifeEvent.timestamp <= date_range_end
-            ).all()
+            ))
+            decisions = result.scalars().all()
             
             for decision in decisions:
                 # Check if we already reminded about this decision at this interval
-                existing = db.query(models.Notification).filter(
+                # Using python filtering for JSON metadata
+                result = await db.execute(select(models.Notification).filter(
                     models.Notification.user_id == user_id,
-                    models.Notification.notification_type == 'decision_reflection',
-                    models.Notification.metadata['decision_id'].astext == str(decision.id),
-                    models.Notification.metadata['days'].astext == str(days)
-                ).first()
+                    models.Notification.notification_type == 'decision_reflection'
+                ))
+                existing_notifs = result.scalars().all()
                 
-                if not existing:
-                    NotificationService.create_notification(
+                already_notified = False
+                for notif in existing_notifs:
+                    if (notif.extra_data and 
+                        str(notif.extra_data.get('decision_id')) == str(decision.id) and 
+                        str(notif.extra_data.get('days')) == str(days)):
+                        already_notified = True
+                        break
+                
+                if not already_notified:
+                    await NotificationService.create_notification(
                         db=db,
                         user_id=user_id,
                         title=f"💭 {days}-Day Check-in",
@@ -268,10 +315,10 @@ class NotificationService:
                     )
     
     @staticmethod
-    def run_all_checks(db: Session, user_id: int):
+    async def run_all_checks(db: AsyncSession, user_id: int):
         """Run all notification checks for a user"""
-        NotificationService.check_commitment_reminder(db, user_id)
-        NotificationService.check_goal_milestones(db, user_id)
-        NotificationService.check_streak_achievements(db, user_id)
-        NotificationService.check_pattern_alerts(db, user_id)
-        NotificationService.check_decision_reflection(db, user_id)
+        await NotificationService.check_commitment_reminder(db, user_id)
+        await NotificationService.check_goal_milestones(db, user_id)
+        await NotificationService.check_streak_achievements(db, user_id)
+        await NotificationService.check_pattern_alerts(db, user_id)
+        await NotificationService.check_decision_reflection(db, user_id)

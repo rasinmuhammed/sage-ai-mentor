@@ -15,6 +15,7 @@ export function useDashboardData(githubUsername: string) {
     const [data, setData] = useState<DashboardData | null>(null)
     const [todayCommitment, setTodayCommitment] = useState<any>(null)
     const [activeGoals, setActiveGoals] = useState<any[]>([])
+    const [dailyTasks, setDailyTasks] = useState<any[]>([])
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
 
@@ -29,15 +30,17 @@ export function useDashboardData(githubUsername: string) {
                 axios.defaults.headers.common['X-Groq-Key'] = groqKey
             }
 
-            const [dashboardRes, commitmentRes, goalsRes] = await Promise.all([
+            const [dashboardRes, commitmentRes, goalsRes, dailyTasksRes] = await Promise.all([
                 axios.get(`${API_URL}/dashboard/${githubUsername}`),
                 axios.get(`${API_URL}/commitments/${githubUsername}/today`),
-                axios.get(`${API_URL}/goals/${githubUsername}/dashboard`)
+                axios.get(`${API_URL}/goals/${githubUsername}/dashboard`),
+                axios.get(`${API_URL}/daily-tasks/${githubUsername}`)
             ])
 
             setData(dashboardRes.data)
             setTodayCommitment(commitmentRes.data)
             setActiveGoals(goalsRes.data.active_goals || [])
+            setDailyTasks(dailyTasksRes.data || [])
             setError(null)
         } catch (err) {
             console.error('Failed to load dashboard:', err)
@@ -51,12 +54,20 @@ export function useDashboardData(githubUsername: string) {
         loadData()
     }, [loadData])
 
+    const optimisticUpdateTask = (taskId: number, updates: any) => {
+        setDailyTasks(prev => prev.map(task =>
+            task.id === taskId ? { ...task, ...updates } : task
+        ))
+    }
+
     return {
         data,
         todayCommitment,
         activeGoals,
+        dailyTasks,
         loading,
         error,
-        refresh: loadData
+        refresh: loadData,
+        optimisticUpdateTask
     }
 }

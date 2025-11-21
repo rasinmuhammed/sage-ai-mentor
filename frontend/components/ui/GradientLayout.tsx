@@ -9,7 +9,7 @@ interface GradientLayoutProps {
 
 export default function GradientLayout({ children, className = '' }: GradientLayoutProps) {
     return (
-        <div className={`relative min-h-screen bg-[#000000] text-[#FBFAEE] overflow-hidden ${className}`}>
+        <div className={`relative min-h-screen bg-[#000000] text-[#FBFAEE] overflow-x-hidden ${className}`}>
             {/* Gradient Leaks */}
             <div className="fixed top-[-20%] left-[-10%] w-[50%] h-[50%] bg-[#933DC9]/20 rounded-full blur-[120px] pointer-events-none animate-pulse-slow" />
             <div className="fixed bottom-[-20%] right-[-10%] w-[50%] h-[50%] bg-[#53118F]/20 rounded-full blur-[120px] pointer-events-none animate-pulse-slow delay-1000" />

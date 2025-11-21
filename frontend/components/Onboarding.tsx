@@ -1,11 +1,12 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useUser } from '@clerk/nextjs'
 import axios from 'axios'
-import { Github, Loader2, CheckCircle, AlertCircle, ExternalLink, ArrowRight, Brain } from 'lucide-react'
+import { Github, Loader2, CheckCircle, AlertCircle, ExternalLink, ArrowRight, Brain, Sparkles, Database, Key, ChevronDown, ChevronUp } from 'lucide-react'
 import OnboardingWalkthrough from './OnboardingWalkthrough'
 import InteractiveTutorial from './InteractiveTutorial'
+import GradientLayout from './ui/GradientLayout'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
@@ -16,35 +17,34 @@ interface OnboardingProps {
 export default function Onboarding({ onComplete }: OnboardingProps) {
   const { user } = useUser()
   const [username, setUsername] = useState('')
+  const [dbUrl, setDbUrl] = useState('')
+  const [groqKey, setGroqKey] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [step, setStep] = useState<'input' | 'analyzing' | 'success'>('input')
+  const [step, setStep] = useState<'input' | 'database-setup' | 'analyzing' | 'success'>('input')
   const [analysisResults, setAnalysisResults] = useState<any>(null)
   const [showWalkthrough, setShowWalkthrough] = useState(false)
   const [showTutorial, setShowTutorial] = useState(false)
+  const [showNeonGuide, setShowNeonGuide] = useState(false)
+  const [showGroqGuide, setShowGroqGuide] = useState(false)
 
   const validateGitHubUsername = (username: string): boolean => {
-    // GitHub username rules: 1-39 characters, alphanumeric and hyphens only
     const regex = /^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,37}[a-zA-Z0-9])?$/
     return regex.test(username)
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleUsernameSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
-    
-    // Validate username format
+
     if (!validateGitHubUsername(username)) {
       setError('Invalid GitHub username format. Use only letters, numbers, and hyphens.')
       return
     }
 
     setLoading(true)
-    setStep('analyzing')
-
     try {
       const email = user?.emailAddresses?.[0]?.emailAddress || null
-      
       // Step 1: Create/update user in backend
       try {
         await axios.post(`${API_URL}/users`, {
@@ -52,13 +52,43 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
           email: email
         })
       } catch (createErr: any) {
-        // If user exists, that's fine, continue
         if (createErr.response?.status !== 400) {
           throw createErr
         }
       }
 
-      // Step 2: Update Clerk metadata (so user stays logged in with GitHub username)
+      // Move to database setup
+      setStep('database-setup')
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Failed to create user. Please try again.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleDatabaseSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError('')
+    setLoading(true)
+
+    if (!dbUrl.trim().startsWith('postgresql://') && !dbUrl.trim().startsWith('postgres://')) {
+      setError('Invalid Database URL. Must start with postgresql://')
+      setLoading(false)
+      return
+    }
+
+    try {
+      // Step 2: Setup Database
+      await axios.post(`${API_URL}/users/${username}/setup-database`, {
+        database_url: dbUrl
+      })
+
+      // Save Groq Key locally
+      if (groqKey.trim()) {
+        localStorage.setItem('groq_api_key', groqKey.trim())
+      }
+
+      // Step 3: Update Clerk metadata
       await user?.update({
         unsafeMetadata: {
           ...user.unsafeMetadata,
@@ -68,314 +98,272 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
         }
       })
 
-      // Step 3: Analyze GitHub (this takes time)
+      // Step 4: Analyze GitHub
+      setStep('analyzing')
       const analysisResponse = await axios.post(`${API_URL}/analyze-github/${username}`)
       setAnalysisResults(analysisResponse.data)
-      
+
       setStep('success')
-      
-      // Auto-redirect after 3 seconds
       setTimeout(() => {
         onComplete(username)
       }, 3000)
-      
+
     } catch (err: any) {
       setLoading(false)
-      setStep('input')
-      
-      // Better error messages
+      // If we fail at analysis but DB is set, we might want to stay on analyzing or go back
+      // For now, go back to DB setup if DB failed, or stay if analysis failed?
+      // Let's handle specific errors
       if (err.response?.status === 404) {
-        setError(`GitHub user "${username}" not found. Please check the spelling and try again.`)
-      } else if (err.response?.status === 403) {
-        setError('GitHub API rate limit exceeded. Please try again in a few minutes.')
-      } else if (err.code === 'ECONNREFUSED') {
-        setError('Cannot connect to backend server. Make sure the backend is running on port 8000.')
+        setError(`GitHub user "${username}" not found.`)
+        setStep('input') // Go back to start if user invalid
+      } else if (err.response?.status === 400) {
+        setError(err.response?.data?.detail || 'Database connection failed.')
+        // Stay on database-setup
       } else {
-        setError(err.response?.data?.detail || 'Failed to analyze GitHub profile. Please try again.')
+        setError('Something went wrong. Please check your inputs and try again.')
       }
     }
   }
 
   const handleSkipToDemo = async () => {
-    // For demo purposes, use a default GitHub user
-    setUsername('octocat')
-    // Auto-submit will be triggered
+    const demoUser = 'torvalds'
+    setUsername(demoUser)
+    setLoading(true)
+    setStep('analyzing')
+
+    setTimeout(() => {
+      setStep('success')
+      setTimeout(() => {
+        onComplete(demoUser)
+      }, 2000)
+    }, 3000)
+  }
+
+  if (showWalkthrough) {
+    return <OnboardingWalkthrough onComplete={() => setShowWalkthrough(false)} />
+  }
+
+  if (showTutorial) {
+    return <InteractiveTutorial onComplete={() => setShowTutorial(false)} />
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950 flex items-center justify-center p-4">
-      {/* Animated Background */}
-      <div className="absolute inset-0 overflow-hidden">
-        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl animate-pulse"></div>
-        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl animate-pulse delay-1000"></div>
-      </div>
-
-      <div className="max-w-2xl w-full relative z-10">
-        {/* Header - Brand Change: Sage -> Reflog */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center space-x-3 mb-4">
-            <div className="bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 p-3 rounded-2xl shadow-lg">
-              <Brain className="w-8 h-8 text-white" />
+    <GradientLayout className="flex items-center justify-center min-h-screen p-4">
+      <div className="w-full max-w-md">
+        <div className="text-center mb-8 animate-float">
+          <div className="flex justify-center mb-4">
+            <div className="w-20 h-20 bg-gradient-to-br from-[#933DC9] to-[#53118F] rounded-2xl flex items-center justify-center shadow-lg shadow-purple-500/20">
+              <Brain className="w-10 h-10 text-white" />
             </div>
-            <h1 className="text-5xl font-bold bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
-              Reflog
-            </h1>
           </div>
-          <p className="text-xl text-gray-400">Your Brutally Honest AI Mentor</p>
+          <h1 className="text-4xl font-bold mb-2 text-gradient">Reflog</h1>
+          <p className="text-[#FBFAEE]/60">Your AI-Powered Engineering Mentor</p>
         </div>
 
-        {/* Main Card */}
-        <div className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 border border-gray-700 rounded-3xl shadow-2xl p-8">
+        <div className="glass-card rounded-2xl p-8 shadow-xl backdrop-blur-xl">
           {step === 'input' && (
-            <>
-              <div className="mb-6">
-                <h2 className="text-3xl font-bold text-white mb-3">
-                  Let's get real, {user?.firstName || 'friend'}
-                </h2>
-                <p className="text-gray-400 leading-relaxed">
-                  Enter your GitHub username. We'll analyze your repos, commit patterns, 
-                  and coding behavior to tell you what you're <strong className="text-white">really</strong> doing 
-                  — not what you think you're doing.
-                </p>
-              </div>
+            <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <h2 className="text-2xl font-semibold mb-2 text-[#FBFAEE]">Welcome aboard</h2>
+              <p className="text-[#FBFAEE]/60 mb-6">Enter your GitHub username to get started.</p>
 
-              <form onSubmit={handleSubmit} className="space-y-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
-                    GitHub Username <span className="text-red-400">*</span>
-                  </label>
-                  <div className="relative">
-                    <Github className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-500 w-5 h-5" />
-                    <input
-                      type="text"
-                      value={username}
-                      onChange={(e) => {
-                        setUsername(e.target.value.toLowerCase().trim())
-                        setError('')
-                      }}
-                      placeholder="octocat"
-                      className="w-full pl-12 pr-4 py-4 bg-gray-800 border border-gray-700 text-white placeholder-gray-500 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition text-lg"
-                      required
-                      autoFocus
-                      disabled={loading}
-                    />
-                  </div>
-                  <div className="mt-2 flex items-center justify-between text-xs">
-                    <p className="text-gray-500">
-                      Connected as: <span className="text-gray-400">{user?.emailAddresses?.[0]?.emailAddress}</span>
-                    </p>
-                    <a 
-                      href="https://github.com" 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      className="text-blue-400 hover:text-blue-300 flex items-center"
-                    >
-                      Don't have GitHub? <ExternalLink className="w-3 h-3 ml-1" />
-                    </a>
-                  </div>
+              <form onSubmit={handleUsernameSubmit} className="space-y-4">
+                <div className="relative group">
+                  <Github className="absolute left-3 top-3.5 w-5 h-5 text-[#FBFAEE]/40 group-focus-within:text-[#C488F8] transition-colors" />
+                  <input
+                    type="text"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    placeholder="GitHub Username"
+                    className="w-full bg-[#1A1A1A]/50 border border-[#FBFAEE]/10 rounded-xl py-3 pl-10 pr-4 text-[#FBFAEE] placeholder-[#FBFAEE]/30 focus:outline-none focus:border-[#933DC9] focus:ring-1 focus:ring-[#933DC9] transition-all"
+                    required
+                    disabled={loading}
+                  />
                 </div>
 
                 {error && (
-                  <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-xl flex items-start space-x-3">
-                    <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
-                    <div className="flex-1">
-                      <p className="text-red-300 text-sm font-medium">Error</p>
-                      <p className="text-red-400 text-sm mt-1">{error}</p>
-                    </div>
+                  <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg flex items-start gap-2 text-red-400 text-sm animate-in fade-in slide-in-from-top-2">
+                    <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                    <span>{error}</span>
                   </div>
                 )}
 
                 <button
                   type="submit"
-                  disabled={loading || !username}
-                  className="w-full bg-gradient-to-r from-blue-600 to-purple-600 text-white py-4 rounded-xl font-semibold hover:from-blue-700 hover:to-purple-700 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center shadow-lg hover:shadow-xl group"
+                  disabled={!username || loading}
+                  className="w-full bg-gradient-to-r from-[#933DC9] to-[#53118F] hover:from-[#A855F7] hover:to-[#7C3AED] text-white font-medium py-3 rounded-xl transition-all transform hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 shadow-lg shadow-purple-500/20 flex items-center justify-center gap-2"
+                >
+                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
+                  <span>Next Step</span>
+                </button>
+              </form>
+
+              <div className="mt-6 pt-6 border-t border-[#FBFAEE]/5 text-center">
+                <p className="text-xs text-[#FBFAEE]/40 mb-3">Don't have a GitHub account?</p>
+                <button
+                  onClick={handleSkipToDemo}
+                  className="text-sm text-[#C488F8] hover:text-[#D8B4FE] transition-colors flex items-center justify-center gap-1 mx-auto hover:underline"
+                >
+                  Try Demo Mode <ExternalLink className="w-3 h-3" />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {step === 'database-setup' && (
+            <div className="animate-in fade-in slide-in-from-right-4 duration-500">
+              <h2 className="text-2xl font-semibold mb-2 text-[#FBFAEE]">Connect Your Data</h2>
+              <p className="text-[#FBFAEE]/60 mb-6 text-sm">
+                Reflog uses a BYOM (Bring Your Own Model) approach. Your data stays in your database.
+              </p>
+
+              <form onSubmit={handleDatabaseSubmit} className="space-y-4">
+                {/* Neon DB URL */}
+                <div className="space-y-2">
+                  <label className="text-xs font-medium text-[#FBFAEE]/60 ml-1">Neon Database URL</label>
+                  <div className="relative group">
+                    <Database className="absolute left-3 top-3.5 w-5 h-5 text-[#FBFAEE]/40 group-focus-within:text-blue-400 transition-colors" />
+                    <input
+                      type="password"
+                      value={dbUrl}
+                      onChange={(e) => setDbUrl(e.target.value)}
+                      placeholder="postgresql://..."
+                      className="w-full bg-[#1A1A1A]/50 border border-[#FBFAEE]/10 rounded-xl py-3 pl-10 pr-4 text-[#FBFAEE] placeholder-[#FBFAEE]/30 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
+                      required
+                      disabled={loading}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowNeonGuide(!showNeonGuide)}
+                    className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1 ml-1"
+                  >
+                    How to get this? {showNeonGuide ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                  </button>
+                  {showNeonGuide && (
+                    <div className="p-3 bg-blue-500/10 rounded-lg text-xs text-blue-200 space-y-1">
+                      <p>1. Go to <a href="https://neon.tech" target="_blank" className="underline">Neon.tech</a> and create a project.</p>
+                      <p>2. Copy the Connection String from the Dashboard.</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Groq API Key */}
+                <div className="space-y-2">
+                  <label className="text-xs font-medium text-[#FBFAEE]/60 ml-1">Groq API Key</label>
+                  <div className="relative group">
+                    <Key className="absolute left-3 top-3.5 w-5 h-5 text-[#FBFAEE]/40 group-focus-within:text-[#C488F8] transition-colors" />
+                    <input
+                      type="password"
+                      value={groqKey}
+                      onChange={(e) => setGroqKey(e.target.value)}
+                      placeholder="gsk_..."
+                      className="w-full bg-[#1A1A1A]/50 border border-[#FBFAEE]/10 rounded-xl py-3 pl-10 pr-4 text-[#FBFAEE] placeholder-[#FBFAEE]/30 focus:outline-none focus:border-[#933DC9] focus:ring-1 focus:ring-[#933DC9] transition-all"
+                      required
+                      disabled={loading}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowGroqGuide(!showGroqGuide)}
+                    className="text-xs text-[#C488F8] hover:text-[#D8B4FE] flex items-center gap-1 ml-1"
+                  >
+                    How to get this? {showGroqGuide ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                  </button>
+                  {showGroqGuide && (
+                    <div className="p-3 bg-[#933DC9]/10 rounded-lg text-xs text-[#E9D5FF] space-y-1">
+                      <p>1. Go to <a href="https://console.groq.com/keys" target="_blank" className="underline">Groq Console</a>.</p>
+                      <p>2. Create and copy your API Key.</p>
+                    </div>
+                  )}
+                </div>
+
+                {error && (
+                  <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg flex items-start gap-2 text-red-400 text-sm animate-in fade-in slide-in-from-top-2">
+                    <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                    <span>{error}</span>
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={!dbUrl || !groqKey || loading}
+                  className="w-full bg-gradient-to-r from-[#933DC9] to-[#53118F] hover:from-[#A855F7] hover:to-[#7C3AED] text-white font-medium py-3 rounded-xl transition-all transform hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 shadow-lg shadow-purple-500/20 flex items-center justify-center gap-2"
                 >
                   {loading ? (
                     <>
-                      <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                      Connecting to GitHub...
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Connecting & Analyzing...</span>
                     </>
                   ) : (
                     <>
-                      Start My Journey
-                      <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
+                      <Sparkles className="w-4 h-4" />
+                      <span>Start Journey</span>
                     </>
                   )}
                 </button>
               </form>
-
-              {/* Warning Box */}
-              <div className="mt-6 p-4 bg-gradient-to-r from-yellow-500/10 to-orange-500/10 border border-yellow-500/30 rounded-xl">
-                <div className="flex items-start space-x-3">
-                  <AlertCircle className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-sm text-yellow-200 font-medium mb-1">Fair Warning</p>
-                    <p className="text-sm text-yellow-300/80">
-                      This AI doesn't validate you or sugar-coat feedback. It challenges you with brutal honesty. 
-                      If you're looking for compliments, this isn't the place.
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Demo Option */}
-              <div className="mt-4 text-center">
-                <button
-                  onClick={handleSkipToDemo}
-                  className="text-sm text-gray-500 hover:text-gray-400 transition"
-                >
-                  Just exploring? Try with demo account →
-                </button>
-              </div>
-            </>
+            </div>
           )}
 
           {step === 'analyzing' && (
-            <div className="text-center py-12">
-              <div className="relative mb-6">
-                <div className="w-24 h-24 mx-auto">
-                  <Loader2 className="w-24 h-24 text-blue-500 animate-spin" />
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <Github className="w-10 h-10 text-blue-400" />
-                  </div>
-                </div>
+            <div className="text-center py-8 animate-in fade-in zoom-in-95 duration-500">
+              <div className="relative w-20 h-20 mx-auto mb-6">
+                <div className="absolute inset-0 border-4 border-[#933DC9]/30 rounded-full"></div>
+                <div className="absolute inset-0 border-4 border-[#933DC9] border-t-transparent rounded-full animate-spin"></div>
+                <Github className="absolute inset-0 m-auto w-8 h-8 text-[#C488F8] animate-pulse" />
               </div>
-              
-              <h3 className="text-2xl font-bold text-white mb-3">
-                Analyzing your GitHub profile...
-              </h3>
-              <p className="text-gray-400 mb-6">
-                Our AI agents are examining your repos, commit patterns, and behavior.
+              <h3 className="text-xl font-semibold text-[#FBFAEE] mb-2">Analyzing Profile</h3>
+              <p className="text-[#FBFAEE]/60 max-w-xs mx-auto">
+                Our AI agents are reviewing your repositories, commit history, and coding patterns...
               </p>
 
-              {/* Progress Steps */}
-              <div className="max-w-md mx-auto space-y-3">
-                {[
-                  { text: 'Fetching repositories', delay: 0 },
-                  { text: 'Analyzing commit patterns', delay: 1000 },
-                  { text: 'Detecting behavior patterns', delay: 2000 },
-                  { text: 'Preparing brutal honesty', delay: 3000 }
-                ].map((item, idx) => (
-                  <div 
-                    key={idx}
-                    className="flex items-center space-x-3 text-gray-500 animate-in fade-in duration-500"
-                    style={{ animationDelay: `${item.delay}ms` }}
-                  >
-                    <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
-                    <span className="text-sm">{item.text}</span>
-                  </div>
-                ))}
-              </div>
-
-              <div className="mt-8 p-4 bg-gray-800/50 border border-gray-700 rounded-xl">
-                <p className="text-xs text-gray-500">
-                  This usually takes 15-30 seconds. Please don't close this page.
-                </p>
+              <div className="mt-8 space-y-3">
+                <div className="flex items-center gap-3 text-sm text-[#FBFAEE]/40">
+                  <Loader2 className="w-4 h-4 animate-spin text-[#933DC9]" />
+                  <span>Fetching repositories...</span>
+                </div>
+                <div className="flex items-center gap-3 text-sm text-[#FBFAEE]/40 delay-75">
+                  <Loader2 className="w-4 h-4 animate-spin text-[#933DC9]" />
+                  <span>Analyzing commit patterns...</span>
+                </div>
+                <div className="flex items-center gap-3 text-sm text-[#FBFAEE]/40 delay-150">
+                  <Loader2 className="w-4 h-4 animate-spin text-[#933DC9]" />
+                  <span>Generating insights...</span>
+                </div>
               </div>
             </div>
           )}
 
-          {step === 'success' && analysisResults && !showWalkthrough && (
-            <div className="text-center py-12">
-              <div className="mb-6">
-                <div className="w-24 h-24 mx-auto bg-gradient-to-br from-green-500 to-emerald-500 rounded-full flex items-center justify-center shadow-lg">
-                  <CheckCircle className="w-12 h-12 text-white" />
-                </div>
+          {step === 'success' && (
+            <div className="text-center py-8 animate-in fade-in zoom-in-95 duration-500">
+              <div className="w-20 h-20 bg-green-500/10 rounded-full flex items-center justify-center mx-auto mb-6 ring-1 ring-green-500/30">
+                <CheckCircle className="w-10 h-10 text-green-400" />
               </div>
-
-              <h3 className="text-3xl font-bold text-white mb-3">
-                Welcome to Reflog! 🎉
-              </h3>
-              <p className="text-gray-400 mb-8">
-                Your profile has been analyzed. Brace yourself for some honest feedback.
+              <h3 className="text-2xl font-bold text-[#FBFAEE] mb-2">Analysis Complete!</h3>
+              <p className="text-[#FBFAEE]/60 mb-8">
+                Welcome to Reflog, <span className="text-[#C488F8] font-medium">@{username}</span>. Your personalized dashboard is ready.
               </p>
-
-              {/* Quick Stats */}
-              {analysisResults.github_analysis && (
-                <div className="grid grid-cols-3 gap-4 max-w-md mx-auto mb-8">
-                  <div className="bg-gray-800/50 border border-gray-700 rounded-xl p-4">
-                    <div className="text-3xl font-bold text-blue-400">
-                      {analysisResults.github_analysis.total_repos}
-                    </div>
-                    <div className="text-xs text-gray-500 mt-1">Repositories</div>
-                  </div>
-                  <div className="bg-gray-800/50 border border-gray-700 rounded-xl p-4">
-                    <div className="text-3xl font-bold text-green-400">
-                      {analysisResults.github_analysis.active_repos}
-                    </div>
-                    <div className="text-xs text-gray-500 mt-1">Active</div>
-                  </div>
-                  <div className="bg-gray-800/50 border border-gray-700 rounded-xl p-4">
-                    <div className="text-3xl font-bold text-purple-400">
-                      {Object.keys(analysisResults.github_analysis.languages || {}).length}
-                    </div>
-                    <div className="text-xs text-gray-500 mt-1">Languages</div>
-                  </div>
-                </div>
-              )}
-
-              <div className="flex items-center justify-center space-x-2 text-gray-500">
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span className="text-sm">Redirecting to dashboard...</span>
+              <div className="w-full bg-[#FBFAEE]/5 h-1 rounded-full overflow-hidden">
+                <div className="h-full bg-green-500 animate-[shimmer_1s_infinite] w-full origin-left"></div>
               </div>
-
-              <button
-                onClick={() => onComplete(username)}
-                className="mt-6 text-blue-400 hover:text-blue-300 text-sm font-medium"
-              >
-                Skip wait, go now →
-              </button>
-              <button
-                onClick={() => setShowWalkthrough(true)}
-                className="mt-6 bg-gradient-to-r from-[#933DC9] to-[#53118F] text-[#FBFAEE] px-8 py-4 rounded-xl font-semibold hover:brightness-110 transition-all shadow-lg group"
-              >
-                Show Me How It Works
-                <ArrowRight className="inline-block w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
-              </button>
+              <p className="text-xs text-[#FBFAEE]/40 mt-2">Redirecting to dashboard...</p>
             </div>
           )}
         </div>
-        {showWalkthrough && !showTutorial && (
-          <OnboardingWalkthrough 
-              onComplete={() => {
-                setShowWalkthrough(false)
-                setShowTutorial(true)
-              }}
-            />
-          )}
 
-          {showTutorial && (
-            <InteractiveTutorial 
-              onComplete={() => {
-                setShowTutorial(false)
-                onComplete(username)
-              }}
-            />
-          )}
-
-        {/* Footer */}
         <div className="mt-8 text-center">
-          <div className="flex items-center justify-center space-x-6 text-sm text-gray-600">
-            <span className="flex items-center">
-              <CheckCircle className="w-4 h-4 mr-1 text-green-400" />
-              Secure
-            </span>
-            <span>•</span>
-            <span className="flex items-center">
-              <CheckCircle className="w-4 h-4 mr-1 text-green-400" />
-              Privacy-focused
-            </span>
-            <span>•</span>
-            <span className="flex items-center">
-              <CheckCircle className="w-4 h-4 mr-1 text-green-400" />
-              No BS
-            </span>
+          <div className="flex items-center justify-center gap-6 text-[#FBFAEE]/30 text-sm">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4" />
+              <span>AI Powered</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Github className="w-4 h-4" />
+              <span>GitHub Integrated</span>
+            </div>
           </div>
-          <p className="text-xs text-gray-700 mt-4">
-            By continuing, you agree to let us roast your code habits
-          </p>
         </div>
       </div>
-    </div>
+    </GradientLayout>
   )
 }
