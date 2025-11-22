@@ -9,7 +9,8 @@ interface CommitmentCalendarProps {
 }
 
 export default function CommitmentCalendar({ githubUsername }: CommitmentCalendarProps) {
-  const { commitmentCalendar: days, fetchCommitmentCalendar, loading: contextLoading, error: contextError } = useDashboard()
+  const { commitmentCalendar, fetchCommitmentCalendar, loading: contextLoading, error: contextError } = useDashboard()
+  const days = commitmentCalendar || []
 
   useEffect(() => {
     fetchCommitmentCalendar()
@@ -75,7 +76,7 @@ export default function CommitmentCalendar({ githubUsername }: CommitmentCalenda
             <div key={day} className="text-center text-xs text-[#FBFAEE]/50 pb-1 font-medium uppercase tracking-wider">{day}</div>
           ))}
 
-          {days.map((day, idx) => {
+          {days.map((day: any, idx: number) => {
             const commitmentExists = day.commitment !== null
             const dateObj = new Date(day.date + 'T00:00:00')
 

@@ -8,34 +8,34 @@ export default function LandingPage() {
   // --- Updated Features with "AI Mentor" Vibe ---
   const features = [
     {
+      icon: <Target className="w-6 h-6" />,
+      title: "30-Day Action Plans",
+      description: "Stop spinning your wheels. Get a structured, AI-generated roadmap to master any skill in 30 days."
+    },
+    {
       icon: <Brain className="w-6 h-6" />,
-      title: "Your Personal AI Council", // Changed
-      description: "Specialized AI agents debate *your* challenges and goals to forge a clear path forward." // Changed
+      title: "The Dojo: LeetCode SRS",
+      description: "Master algorithms with Spaced Repetition. Never forget how to invert a binary tree again."
     },
     {
       icon: <Github className="w-6 h-6" />,
-      title: "Uncover Your Real Habits", // Changed
-      description: "Analyzes commit history and code structure to show you the patterns you can't see yourself." // Changed
-    },
-    {
-      icon: <Target className="w-6 h-6" />,
       title: "Commitment Tracking",
-      description: "Log daily goals and review outcomes. Reflog holds you accountable, no excuses accepted." // Kept as-is, it's perfect
+      description: "Log daily goals and review outcomes. Reflog holds you accountable, no excuses accepted."
     },
     {
       icon: <TrendingUp className="w-6 h-6" />,
-      title: "Break Your Bad Cycles", // Changed
-      description: "Identifies cycles of procrastination, 'tutorial hell', and perfectionism blocking your path to mastery." // Changed
+      title: "Break Your Bad Cycles",
+      description: "Identifies cycles of procrastination, 'tutorial hell', and perfectionism blocking your path to mastery."
     },
     {
       icon: <MessageCircle className="w-6 h-6" />,
       title: "Unfiltered AI Dialogue",
-      description: "Ask tough questions. Get brutally honest, data-driven feedback designed for real growth." // Kept as-is, also perfect
+      description: "Ask tough questions. Get brutally honest, data-driven feedback designed for real growth."
     },
     {
       icon: <BookOpen className="w-6 h-6" />,
-      title: "Decision & Wisdom Log", // Changed
-      description: "Chronicle key decisions, analyze outcomes with your AI mentor, and build a playbook of lasting wisdom." // Changed
+      title: "Life Decision Log",
+      description: "Chronicle key decisions, analyze outcomes with your AI mentor, and build a playbook of lasting wisdom."
     }
   ];
 
@@ -194,11 +194,11 @@ export default function LandingPage() {
       {/* How It Works Section - Simplified */}
       <div className="relative z-10 max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-16 lg:py-24">
         <div className="text-center mb-12 lg:mb-16">
-           {/* --- Changed --- */}
+          {/* --- Changed --- */}
           <h2 className="text-3xl lg:text-4xl font-bold text-[#FBFAEE] mb-3">
             Your Journey to Mastery
           </h2>
-           <p className="text-lg text-[#FBFAEE]/70 max-w-xl mx-auto">
+          <p className="text-lg text-[#FBFAEE]/70 max-w-xl mx-auto">
             Connect, reflect, commit, and ship. Your AI mentor guides you through the process.
           </p>
         </div>
@@ -209,8 +209,8 @@ export default function LandingPage() {
             { step: "3", title: "Set Daily Goals", description: "Commit to specific, shippable tasks." },
             { step: "4", title: "Track & Iterate", description: "Review outcomes, log decisions, repeat." }
           ].map((item) => (
-             <div key={item.step} className="bg-[#242424]/50 border border-[#242424]/60 rounded-lg p-5">
-               <div className="bg-gradient-to-r from-[#933DC9] to-[#53118F] w-10 h-10 rounded-full flex items-center justify-center mx-auto mb-3 text-[#FBFAEE] font-bold text-lg shadow-md">
+            <div key={item.step} className="bg-[#242424]/50 border border-[#242424]/60 rounded-lg p-5">
+              <div className="bg-gradient-to-r from-[#933DC9] to-[#53118F] w-10 h-10 rounded-full flex items-center justify-center mx-auto mb-3 text-[#FBFAEE] font-bold text-lg shadow-md">
                 {item.step}
               </div>
               <h3 className="text-base font-semibold text-[#FBFAEE] mb-1">{item.title}</h3>
@@ -240,9 +240,9 @@ export default function LandingPage() {
               key={index}
               className="bg-[#242424] border border-[#242424]/50 rounded-xl p-6 transition-all hover:border-[#933DC9]/40 flex flex-col"
             >
-               <blockquote className="text-[#FBFAEE]/80 mb-4 leading-relaxed italic text-sm flex-grow">
-                 "{testimonial.quote.replace('Sage', 'Reflog')}" {/* Replace name in quote */}
-               </blockquote>
+              <blockquote className="text-[#FBFAEE]/80 mb-4 leading-relaxed italic text-sm flex-grow">
+                "{testimonial.quote.replace('Sage', 'Reflog')}" {/* Replace name in quote */}
+              </blockquote>
               <div className="mt-auto pt-4 border-t border-[#242424]/40">
                 <p className="text-[#FBFAEE] font-semibold text-sm">{testimonial.author}</p>
                 <p className="text-[#FBFAEE]/60 text-xs">{testimonial.role}</p>
@@ -255,8 +255,8 @@ export default function LandingPage() {
       {/* CTA Section */}
       <div className="relative z-10 max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-16 lg:py-24">
         <div className="bg-gradient-to-br from-[#933DC9] to-[#53118F] rounded-2xl p-8 sm:p-12 text-center relative overflow-hidden shadow-2xl">
-           {/* Subtle pattern */}
-           <div className="absolute inset-0 opacity-10 bg-[radial-gradient(#FBFAEE_1px,transparent_1px)] [background-size:16px_16px]"></div>
+          {/* Subtle pattern */}
+          <div className="absolute inset-0 opacity-10 bg-[radial-gradient(#FBFAEE_1px,transparent_1px)] [background-size:16px_16px]"></div>
           <div className="relative z-10">
             {/* --- Changed --- */}
             <h2 className="text-3xl lg:text-4xl font-bold text-[#FBFAEE] mb-3">
@@ -286,7 +286,7 @@ export default function LandingPage() {
           </div>
           {/* Copyright - You already had "AI Mentor" here, which is perfect! */}
           <div className="text-[#FBFAEE]/60 text-xs text-center sm:text-right">
-             © {new Date().getFullYear()} Reflog AI Mentor. Reflect. Improve. Ship.
+            © {new Date().getFullYear()} Reflog AI Mentor. Reflect. Improve. Ship.
           </div>
         </div>
       </footer>

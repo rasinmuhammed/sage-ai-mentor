@@ -61,7 +61,8 @@ interface DashboardContextType {
     goals: any[]
     goalsDashboard: any
     decisions: LifeDecision[]
-    commitmentCalendar: CommitmentDay[]
+    commitmentCalendar: any // Changed from CommitmentDay[] to any as per instruction
+    analyticsData: any // Added
     loading: boolean
     error: string | null
 
@@ -71,6 +72,7 @@ interface DashboardContextType {
     fetchGoals: (status?: string, force?: boolean) => Promise<void>
     fetchDecisions: (force?: boolean) => Promise<void>
     fetchCommitmentCalendar: (force?: boolean) => Promise<void>
+    fetchAnalytics: () => Promise<void> // Added
     optimisticUpdateTask: (taskId: number, updates: any) => void
 }
 
@@ -89,7 +91,8 @@ export function DashboardProvider({ children, githubUsername }: { children: Reac
     const [goalsDashboard, setGoalsDashboard] = useState<any>(null)
 
     const [decisions, setDecisions] = useState<LifeDecision[]>([])
-    const [commitmentCalendar, setCommitmentCalendar] = useState<CommitmentDay[]>([])
+    const [commitmentCalendar, setCommitmentCalendar] = useState<any>(null) // Changed from CommitmentDay[] to any
+    const [analyticsData, setAnalyticsData] = useState<any>(null) // Added
 
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
@@ -100,6 +103,7 @@ export function DashboardProvider({ children, githubUsername }: { children: Reac
     const [lastGoalsFilter, setLastGoalsFilter] = useState<string>('active')
     const [lastDecisionsFetch, setLastDecisionsFetch] = useState<number>(0)
     const [lastCommitmentFetch, setLastCommitmentFetch] = useState<number>(0)
+    const [lastAnalyticsFetch, setLastAnalyticsFetch] = useState<number>(0) // Added
 
     const refreshDashboard = useCallback(async () => {
         if (!githubUsername) return
@@ -111,17 +115,19 @@ export function DashboardProvider({ children, githubUsername }: { children: Reac
                 axios.defaults.headers.common['X-Groq-Key'] = groqKey
             }
 
-            const [dashboardRes, commitmentRes, goalsRes, dailyTasksRes] = await Promise.all([
+            const [dashboardRes, commitmentRes, goalsRes, dailyTasksRes, analyticsRes] = await Promise.all([ // Added analyticsRes
                 axios.get(`${API_URL}/dashboard/${githubUsername}`),
                 axios.get(`${API_URL}/commitments/${githubUsername}/today`),
                 axios.get(`${API_URL}/goals/${githubUsername}/dashboard`),
-                axios.get(`${API_URL}/daily-tasks/${githubUsername}`)
+                axios.get(`${API_URL}/daily-tasks/${githubUsername}`),
+                axios.get(`${API_URL}/analytics/${githubUsername}`) // Added analytics fetch
             ])
 
             setDashboardData(dashboardRes.data)
             setTodayCommitment(commitmentRes.data)
             setActiveGoals(goalsRes.data.active_goals || [])
             setDailyTasks(dailyTasksRes.data || [])
+            setAnalyticsData(analyticsRes.data) // Set analytics data
             setError(null)
         } catch (err) {
             console.error('Failed to load dashboard:', err)
@@ -191,7 +197,7 @@ export function DashboardProvider({ children, githubUsername }: { children: Reac
 
     const fetchCommitmentCalendar = useCallback(async (force = false) => {
         const now = Date.now()
-        if (!force && commitmentCalendar.length > 0 && (now - lastCommitmentFetch < 60000)) {
+        if (!force && commitmentCalendar && commitmentCalendar.length > 0 && (now - lastCommitmentFetch < 60000)) { // Added check for commitmentCalendar existence
             return
         }
 
@@ -235,7 +241,22 @@ export function DashboardProvider({ children, githubUsername }: { children: Reac
         } catch (err) {
             console.error('Failed to load commitment calendar:', err)
         }
-    }, [githubUsername, commitmentCalendar.length, lastCommitmentFetch])
+    }, [githubUsername, commitmentCalendar, lastCommitmentFetch]) // Added commitmentCalendar to dependency array
+
+    const fetchAnalytics = useCallback(async (force = false) => { // Added fetchAnalytics
+        const now = Date.now()
+        if (!force && analyticsData && (now - lastAnalyticsFetch < 60000)) { // Added check for analyticsData existence
+            return
+        }
+
+        try {
+            const response = await axios.get(`${API_URL}/analytics/${githubUsername}`)
+            setAnalyticsData(response.data)
+            setLastAnalyticsFetch(now)
+        } catch (err) {
+            console.error('Failed to fetch analytics:', err)
+        }
+    }, [githubUsername, analyticsData, lastAnalyticsFetch]) // Added analyticsData to dependency array
 
     const optimisticUpdateTask = useCallback((taskId: number, updates: any) => {
         setDailyTasks(prev => prev.map(task =>
@@ -260,6 +281,7 @@ export function DashboardProvider({ children, githubUsername }: { children: Reac
             goalsDashboard,
             decisions,
             commitmentCalendar,
+            analyticsData, // Added
             loading,
             error,
             refreshDashboard,
@@ -267,6 +289,7 @@ export function DashboardProvider({ children, githubUsername }: { children: Reac
             fetchGoals,
             fetchDecisions,
             fetchCommitmentCalendar,
+            fetchAnalytics, // Added
             optimisticUpdateTask
         }}>
             {children}

@@ -25,9 +25,19 @@ export default function Goals({ githubUsername }: GoalsProps) {
   const [showProgressModal, setShowProgressModal] = useState(false)
   const [filterStatus, setFilterStatus] = useState('active')
 
+  const [editingGoal, setEditingGoal] = useState<any>(null)
+  const [activeMenuGoalId, setActiveMenuGoalId] = useState<number | null>(null)
+
   useEffect(() => {
     fetchGoals(filterStatus)
   }, [fetchGoals, filterStatus])
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = () => setActiveMenuGoalId(null)
+    document.addEventListener('click', handleClickOutside)
+    return () => document.removeEventListener('click', handleClickOutside)
+  }, [])
 
   const getPriorityColor = (priority: string) => {
     const colors = {
@@ -37,6 +47,24 @@ export default function Goals({ githubUsername }: GoalsProps) {
       low: 'from-gray-600 to-gray-500'
     }
     return colors[priority as keyof typeof colors] || colors.medium
+  }
+
+  const handleDeleteGoal = async (goalId: number) => {
+    if (!window.confirm('Are you sure you want to delete this goal? This action cannot be undone.')) return
+
+    try {
+      await axios.delete(`${API_URL}/goals/${githubUsername}/${goalId}`)
+      fetchGoals(filterStatus, true)
+    } catch (error) {
+      console.error('Failed to delete goal:', error)
+      alert('Failed to delete goal')
+    }
+  }
+
+  const handleEditGoal = (goal: any) => {
+    setEditingGoal(goal)
+    setShowCreateModal(true)
+    setActiveMenuGoalId(null)
   }
 
   // Only show loading if we have no goals and context is loading
@@ -60,7 +88,10 @@ export default function Goals({ githubUsername }: GoalsProps) {
           </p>
         </div>
         <button
-          onClick={() => setShowCreateModal(true)}
+          onClick={() => {
+            setEditingGoal(null)
+            setShowCreateModal(true)
+          }}
           className="bg-gradient-to-r from-[#933DC9] to-[#53118F] text-[#FBFAEE] px-6 py-3 rounded-xl font-semibold hover:brightness-110 transition flex items-center space-x-2 shadow-lg shadow-purple-500/20 hover:scale-105 active:scale-95"
         >
           <Plus className="w-5 h-5" />
@@ -129,7 +160,10 @@ export default function Goals({ githubUsername }: GoalsProps) {
             </p>
             {filterStatus === 'active' && (
               <button
-                onClick={() => setShowCreateModal(true)}
+                onClick={() => {
+                  setEditingGoal(null)
+                  setShowCreateModal(true)
+                }}
                 className="bg-gradient-to-r from-[#933DC9] to-[#53118F] text-[#FBFAEE] px-6 py-3 rounded-xl hover:brightness-110 transition font-semibold shadow-lg shadow-purple-500/20"
               >
                 Create Your First Goal
@@ -140,7 +174,7 @@ export default function Goals({ githubUsername }: GoalsProps) {
           goals.map((goal) => (
             <div
               key={goal.id}
-              className="glass-card rounded-2xl p-5 hover:shadow-xl hover:border-[#933DC9]/40 transition-all cursor-pointer group hover:bg-black/30"
+              className="glass-card rounded-2xl p-5 hover:shadow-xl hover:border-[#933DC9]/40 transition-all cursor-pointer group hover:bg-black/30 relative"
               onClick={() => {
                 setSelectedGoal(goal)
                 setShowProgressModal(true)
@@ -161,15 +195,43 @@ export default function Goals({ githubUsername }: GoalsProps) {
                     </span>
                   </div>
                 </div>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    // Handle menu
-                  }}
-                  className="p-2 hover:bg-white/10 rounded-lg transition-colors"
-                >
-                  <MoreVertical className="w-4 h-4 text-[#FBFAEE]/60" />
-                </button>
+                <div className="relative">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setActiveMenuGoalId(activeMenuGoalId === goal.id ? null : goal.id)
+                    }}
+                    className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+                  >
+                    <MoreVertical className="w-4 h-4 text-[#FBFAEE]/60" />
+                  </button>
+
+                  {/* Dropdown Menu */}
+                  {activeMenuGoalId === goal.id && (
+                    <div className="absolute right-0 top-full mt-2 w-32 bg-[#1a1a1a] border border-white/10 rounded-xl shadow-xl z-20 overflow-hidden animate-in fade-in zoom-in-95 duration-100">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleEditGoal(goal)
+                        }}
+                        className="w-full px-4 py-2.5 text-left text-sm text-[#FBFAEE]/80 hover:bg-white/5 hover:text-[#FBFAEE] flex items-center space-x-2 transition-colors"
+                      >
+                        <Edit className="w-3.5 h-3.5" />
+                        <span>Edit</span>
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleDeleteGoal(goal.id)
+                        }}
+                        className="w-full px-4 py-2.5 text-left text-sm text-red-400 hover:bg-red-500/10 hover:text-red-300 flex items-center space-x-2 transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Delete</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Progress */}
@@ -269,9 +331,14 @@ export default function Goals({ githubUsername }: GoalsProps) {
       {showCreateModal && (
         <CreateGoalModal
           githubUsername={githubUsername}
-          onClose={() => setShowCreateModal(false)}
+          initialData={editingGoal}
+          onClose={() => {
+            setShowCreateModal(false)
+            setEditingGoal(null)
+          }}
           onComplete={() => {
             setShowCreateModal(false)
+            setEditingGoal(null)
             fetchGoals(filterStatus, true)
           }}
         />

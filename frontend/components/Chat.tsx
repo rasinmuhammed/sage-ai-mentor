@@ -202,6 +202,19 @@ export default function Chat({ githubUsername }: ChatProps) {
                     }
                     : msg
                 )
+              } else if (data.type === 'error') {
+                // Handle error from backend
+                return newMessages.map((msg, idx) =>
+                  idx === newMessages.length - 1
+                    ? {
+                      ...msg,
+                      type: 'error',
+                      content: data.message.includes('Invalid API Key')
+                        ? 'Error: Invalid Groq API Key. Please update your API key in Settings.'
+                        : `Error: ${data.message}`
+                    }
+                    : msg
+                )
               }
 
               return prev

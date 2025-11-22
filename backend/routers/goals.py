@@ -317,18 +317,6 @@ async def get_weekly_review(github_username: str, db: AsyncSession = Depends(get
         print(f"❌ Weekly review failed: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to generate review")
 
-@router.patch("/goals/{github_username}/{goal_id}/tasks/{task_id}")
-async def update_task_status(github_username: str, goal_id: int, task_id: int, status: str, db: AsyncSession = Depends(get_user_db), system_db: AsyncSession = Depends(get_system_db)):
-    result = await system_db.execute(select(models.User).filter(models.User.github_username == github_username))
-    user = result.scalars().first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    
-    result = await db.execute(select(models.Task).join(models.SubGoal, models.Task.subgoal_id == models.SubGoal.id).join(models.Goal, models.SubGoal.goal_id == models.Goal.id).filter(models.Task.id == task_id, models.Goal.id == goal_id, models.Goal.user_id == user.id))
-    task = result.scalars().first()
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
-    
     task.status = status
     if status == 'completed' and not task.completed_at:
         task.completed_at = datetime.utcnow()
@@ -337,3 +325,54 @@ async def update_task_status(github_username: str, goal_id: int, task_id: int, s
     await db.commit()
     await db.refresh(task)
     return {"message": "Task updated successfully", "task": task}
+
+@router.delete("/goals/{github_username}/{goal_id}")
+async def delete_goal(github_username: str, goal_id: int, db: AsyncSession = Depends(get_user_db), system_db: AsyncSession = Depends(get_system_db)):
+    result = await system_db.execute(select(models.User).filter(models.User.github_username == github_username))
+    user = result.scalars().first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    result = await db.execute(select(models.Goal).filter(models.Goal.id == goal_id, models.Goal.user_id == user.id))
+    goal = result.scalars().first()
+    if not goal:
+        raise HTTPException(status_code=404, detail="Goal not found")
+    
+    await db.delete(goal)
+    await db.commit()
+    return {"message": "Goal deleted successfully"}
+
+@router.put("/goals/{github_username}/{goal_id}/milestones/{milestone_id}")
+async def update_milestone(github_username: str, goal_id: int, milestone_id: int, update: models.MilestoneCreate, db: AsyncSession = Depends(get_user_db), system_db: AsyncSession = Depends(get_system_db)):
+    result = await system_db.execute(select(models.User).filter(models.User.github_username == github_username))
+    user = result.scalars().first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    result = await db.execute(select(models.Milestone).join(models.Goal).filter(models.Milestone.id == milestone_id, models.Milestone.goal_id == goal_id, models.Goal.user_id == user.id))
+    milestone = result.scalars().first()
+    if not milestone:
+        raise HTTPException(status_code=404, detail="Milestone not found")
+    
+    milestone.title = update.title
+    milestone.description = update.description
+    milestone.target_date = update.target_date
+    await db.commit()
+    await db.refresh(milestone)
+    return {"message": "Milestone updated", "milestone": milestone}
+
+@router.delete("/goals/{github_username}/{goal_id}/milestones/{milestone_id}")
+async def delete_milestone(github_username: str, goal_id: int, milestone_id: int, db: AsyncSession = Depends(get_user_db), system_db: AsyncSession = Depends(get_system_db)):
+    result = await system_db.execute(select(models.User).filter(models.User.github_username == github_username))
+    user = result.scalars().first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    result = await db.execute(select(models.Milestone).join(models.Goal).filter(models.Milestone.id == milestone_id, models.Milestone.goal_id == goal_id, models.Goal.user_id == user.id))
+    milestone = result.scalars().first()
+    if not milestone:
+        raise HTTPException(status_code=404, detail="Milestone not found")
+    
+    await db.delete(milestone)
+    await db.commit()
+    return {"message": "Milestone deleted successfully"}

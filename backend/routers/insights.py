@@ -383,6 +383,75 @@ async def evaluate_decision(
         "how_it_aged": re_evaluation["how_it_aged"]
     }
 
+@router.delete("/life-decisions/{github_username}/{decision_id}")
+async def delete_life_decision(
+    github_username: str,
+    decision_id: int,
+    db: AsyncSession = Depends(get_user_db),
+    system_db: AsyncSession = Depends(get_system_db)
+):
+    result = await system_db.execute(select(models.User).filter(models.User.github_username == github_username))
+    user = result.scalars().first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    result = await db.execute(select(models.LifeEvent).filter(models.LifeEvent.id == decision_id, models.LifeEvent.user_id == user.id))
+    event = result.scalars().first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Decision not found")
+
+    await db.delete(event)
+    await db.commit()
+    return {"message": "Life decision deleted successfully"}
+
+@router.put("/life-decisions/{github_username}/{decision_id}", response_model=LifeDecisionResponse)
+async def update_life_decision(
+    github_username: str,
+    decision_id: int,
+    decision: LifeDecisionCreate,
+    db: AsyncSession = Depends(get_user_db),
+    system_db: AsyncSession = Depends(get_system_db)
+):
+    result = await system_db.execute(select(models.User).filter(models.User.github_username == github_username))
+    user = result.scalars().first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    result = await db.execute(select(models.LifeEvent).filter(models.LifeEvent.id == decision_id, models.LifeEvent.user_id == user.id))
+    event = result.scalars().first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Decision not found")
+
+    event.description = decision.title
+    event.event_type = decision.decision_type
+    event.time_horizon = decision.time_horizon
+    
+    # Update context
+    context = event.context if isinstance(event.context, dict) else {}
+    context["full_description"] = decision.description
+    context["impact_areas"] = decision.impact_areas
+    if decision.context:
+        context.update(decision.context)
+        
+    event.context = context
+    from sqlalchemy.orm.attributes import flag_modified
+    flag_modified(event, "context")
+
+    await db.commit()
+    await db.refresh(event)
+    
+    return {
+        "id": event.id,
+        "title": event.description,
+        "description": context.get("full_description", event.description),
+        "decision_type": event.event_type,
+        "impact_areas": context.get("impact_areas", []),
+        "timestamp": event.timestamp,
+        "time_horizon": event.time_horizon,
+        "ai_analysis": context.get("ai_analysis"),
+        "lessons_learned": context.get("lessons", [])
+    }
+
 @router.get("/debug/life-decisions/{github_username}")
 async def debug_life_decisions(
     github_username: str, 

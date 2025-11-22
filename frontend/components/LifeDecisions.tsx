@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import axios from 'axios'
-import { Plus, BookOpen, TrendingUp, AlertCircle, CheckCircle, Lightbulb, Calendar, X, Loader2, Clock, Filter, Brain, RefreshCw } from 'lucide-react'
+import { Plus, BookOpen, TrendingUp, AlertCircle, CheckCircle, Lightbulb, Calendar, X, Loader2, Clock, Filter, Brain, RefreshCw, MoreVertical, Edit, Trash2 } from 'lucide-react'
 import MarkdownRenderer from './MarkdownRenderer'
 import { useDashboard } from '@/contexts/DashboardContext'
 
@@ -42,6 +42,39 @@ export default function LifeDecisions({ githubUsername }: LifeDecisionsProps) {
   const [reanalyzing, setReanalyzing] = useState(false)
   const [reanalyzeError, setReanalyzeError] = useState('')
   const [error, setError] = useState<string | null>(null);
+
+  const [editingDecision, setEditingDecision] = useState<LifeDecision | null>(null)
+  const [activeMenuDecisionId, setActiveMenuDecisionId] = useState<number | null>(null)
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = () => setActiveMenuDecisionId(null)
+    document.addEventListener('click', handleClickOutside)
+    return () => document.removeEventListener('click', handleClickOutside)
+  }, [])
+
+  const handleDeleteDecision = async (decisionId: number) => {
+    if (!window.confirm('Are you sure you want to delete this decision? This action cannot be undone.')) return
+
+    try {
+      await axios.delete(`${API_URL}/life-decisions/${githubUsername}/${decisionId}`)
+      await fetchDecisions(true)
+    } catch (error) {
+      console.error('Failed to delete decision:', error)
+      alert('Failed to delete decision')
+    }
+  }
+
+  const handleEditDecision = (decision: LifeDecision) => {
+    setEditingDecision(decision)
+    setTitle(decision.title)
+    setDescription(decision.description)
+    setDecisionType(decision.decision_type)
+    setTimeHorizon(decision.time_horizon || 'medium_term')
+    setImpactAreas(decision.impact_areas)
+    setShowModal(true)
+    setActiveMenuDecisionId(null)
+  }
 
   useEffect(() => {
     fetchDecisions()
@@ -95,19 +128,25 @@ export default function LifeDecisions({ githubUsername }: LifeDecisionsProps) {
     }
     setSubmitting(true)
     try {
-      await axios.post(`${API_URL}/life-decisions/${githubUsername}`, {
+      const payload = {
         title,
         description,
         decision_type: decisionType,
         impact_areas: impactAreas,
         time_horizon: timeHorizon
-      })
+      }
+
+      if (editingDecision) {
+        await axios.put(`${API_URL}/life-decisions/${githubUsername}/${editingDecision.id}`, payload)
+      } else {
+        await axios.post(`${API_URL}/life-decisions/${githubUsername}`, payload)
+      }
 
       await fetchDecisions(true)
       setShowModal(false)
       resetForm()
     } catch (error) {
-      console.error('Failed to create decision:', error)
+      console.error('Failed to save decision:', error)
       alert('Failed to save decision. Please try again.')
     } finally {
       setSubmitting(false)
@@ -120,6 +159,7 @@ export default function LifeDecisions({ githubUsername }: LifeDecisionsProps) {
     setDecisionType('major_decision')
     setTimeHorizon('medium_term')
     setImpactAreas([])
+    setEditingDecision(null)
   }
 
   const toggleImpactArea = (area: string) => {
@@ -304,6 +344,45 @@ export default function LifeDecisions({ githubUsername }: LifeDecisionsProps) {
                       </div>
                     </div>
                   </div>
+
+                  {/* Menu Button */}
+                  <div className="relative ml-2">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setActiveMenuDecisionId(activeMenuDecisionId === decision.id ? null : decision.id)
+                      }}
+                      className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+                    >
+                      <MoreVertical className="w-4 h-4 text-[#FBFAEE]/60" />
+                    </button>
+
+                    {/* Dropdown */}
+                    {activeMenuDecisionId === decision.id && (
+                      <div className="absolute right-0 top-full mt-2 w-32 bg-[#1a1a1a] border border-white/10 rounded-xl shadow-xl z-20 overflow-hidden animate-in fade-in zoom-in-95 duration-100">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleEditDecision(decision)
+                          }}
+                          className="w-full px-4 py-2.5 text-left text-sm text-[#FBFAEE]/80 hover:bg-white/5 hover:text-[#FBFAEE] flex items-center space-x-2 transition-colors"
+                        >
+                          <Edit className="w-3.5 h-3.5" />
+                          <span>Edit</span>
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleDeleteDecision(decision.id)
+                          }}
+                          className="w-full px-4 py-2.5 text-left text-sm text-red-400 hover:bg-red-500/10 hover:text-red-300 flex items-center space-x-2 transition-colors"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Delete</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 <p className="text-[#FBFAEE]/80 text-sm mb-4 line-clamp-2">{decision.description}</p>
@@ -346,7 +425,9 @@ export default function LifeDecisions({ githubUsername }: LifeDecisionsProps) {
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
           <div className="glass-card rounded-3xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto flex flex-col border border-white/10">
             <div className="flex items-center justify-between p-6 border-b border-white/10 sticky top-0 bg-[#1A1A1A]/95 backdrop-blur-md z-10 rounded-t-3xl">
-              <h2 className="text-2xl font-bold text-gradient">Log Life Decision</h2>
+              <h2 className="text-2xl font-bold text-gradient">
+                {editingDecision ? 'Edit Life Decision' : 'Log Life Decision'}
+              </h2>
               <button
                 onClick={() => { setShowModal(false); resetForm(); }}
                 className="text-[#FBFAEE]/60 hover:text-[#FBFAEE] transition-colors p-2 hover:bg-white/10 rounded-lg"
@@ -465,7 +546,7 @@ export default function LifeDecisions({ githubUsername }: LifeDecisionsProps) {
                       Analyzing & Saving...
                     </>
                   ) : (
-                    'Log Decision'
+                    editingDecision ? 'Save Changes' : 'Log Decision'
                   )}
                 </button>
               </div>

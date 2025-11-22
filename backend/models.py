@@ -175,6 +175,32 @@ class Milestone(UserBase):
     
     goal = relationship("Goal", back_populates="milestones")
 
+class LeetCodeProblem(UserBase):
+    __tablename__ = "leetcode_problems"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, index=True) # Removed ForeignKey("users.id") as User is in SystemBase
+    title = Column(String)
+    difficulty = Column(String) # Easy, Medium, Hard
+    pattern = Column(String) # e.g., "Sliding Window", "DFS"
+    link = Column(String)
+    mastery_level = Column(Integer) # 1-5
+    last_reviewed = Column(DateTime, default=datetime.utcnow)
+    next_review = Column(DateTime, default=datetime.utcnow)
+    notes = Column(String, nullable=True)
+    
+    logs = relationship("RepetitionLog", back_populates="problem", cascade="all, delete-orphan")
+
+class RepetitionLog(UserBase):
+    __tablename__ = "repetition_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    problem_id = Column(Integer, ForeignKey("leetcode_problems.id"))
+    review_date = Column(DateTime, default=datetime.utcnow)
+    quality_rating = Column(Integer) # 0-5
+    
+    problem = relationship("LeetCodeProblem", back_populates="logs")
+
 class GoalProgress(UserBase):
     __tablename__ = "goal_progress"
     
@@ -650,6 +676,9 @@ class DailyTaskCreate(BaseModel):
     acceptance_criteria: Optional[List[str]] = []
 
 class DailyTaskUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    estimated_time: Optional[int] = None
     status: Optional[str] = None
     actual_time_spent: Optional[int] = None
     difficulty_rating: Optional[int] = None

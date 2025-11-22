@@ -7,10 +7,9 @@ import {
 } from 'lucide-react'
 import MarkdownRenderer from './MarkdownRenderer'
 import { useActionPlansQuery, ActionPlan, DailyTask, Skill, PlanSkillFocus, SkillFocusSummary } from '@/hooks/useActionPlansQuery'
+import EditTaskModal from './EditTaskModal'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-
-// Interfaces imported from hook
 
 interface TaskCardProps {
   task: DailyTask
@@ -18,6 +17,8 @@ interface TaskCardProps {
   githubUsername: string
   onComplete: () => void
   onOptimisticComplete: (taskId: number, updates: Partial<DailyTask>) => void
+  onEdit: (task: DailyTask) => void
+  onDelete: (taskId: number) => void
 }
 
 interface PlanCardProps {
@@ -31,9 +32,8 @@ interface CreatePlanModalProps {
   githubUsername: string
   onClose: () => void
   onComplete: () => void
+  initialData?: ActionPlan | null
 }
-
-// --- Main Component ---
 
 export default function ActionPlans({ githubUsername }: { githubUsername: string }) {
   const { plans, skillFocusSummary, isLoading: contextLoading, invalidate } = useActionPlansQuery(githubUsername)
@@ -46,39 +46,44 @@ export default function ActionPlans({ githubUsername }: { githubUsername: string
   const [error, setError] = useState<string | null>(null)
   const [advancingDay, setAdvancingDay] = useState(false)
 
-  // Initial fetch handled by useQuery
-
-  useEffect(() => {
-    // Update active plan when plans change
-    const active = plans.find(p => p.status === 'active')
-    if (active) {
-      setActivePlan(active)
-      loadTodayTasks(active.id)
-    } else {
-      setActivePlan(null)
-      setTodayTasks(null)
-    }
-  }, [plans])
+  const [editingPlan, setEditingPlan] = useState<ActionPlan | null>(null)
+  const [activeMenuPlanId, setActiveMenuPlanId] = useState<number | null>(null)
+  const [editingTask, setEditingTask] = useState<DailyTask | null>(null)
 
   const loadTodayTasks = async (planId: number) => {
     try {
+      setLocalLoading(true)
       const response = await axios.get(`${API_URL}/action-plans/${githubUsername}/${planId}/today`)
       setTodayTasks(response.data)
-    } catch (error) {
-      console.error('Failed to load today tasks:', error)
+      setError(null)
+    } catch (err) {
+      console.error('Failed to load tasks:', err)
+      setError('Failed to load today\'s tasks')
+    } finally {
+      setLocalLoading(false)
     }
   }
 
-  const handleRefresh = () => {
-    invalidate()
+  const handleOptimisticTaskCompletion = (taskId: number, updates: Partial<DailyTask>) => {
+    if (!todayTasks) return
+
+    setTodayTasks((prev: any) => {
+      if (!prev) return null;
+      return {
+        ...prev,
+        tasks: prev.tasks.map((t: DailyTask) =>
+          t.id === taskId ? { ...t, ...updates } : t
+        )
+      }
+    })
   }
 
-  const handleAdvanceDay = async (planId: number) => {
-    setAdvancingDay(true);
+  const handleAdvanceDay = async () => {
+    if (!activePlan) return
+    setAdvancingDay(true)
     try {
-      const response = await axios.post(`${API_URL}/action-plans/${githubUsername}/${planId}/advance-day`);
+      const response = await axios.post(`${API_URL}/action-plans/${githubUsername}/${activePlan.id}/advance-day`)
 
-      // Handle warning if tasks are incomplete but user advances anyway
       if (response.data.warning) {
         alert(`Warning: ${response.data.warning}. Incomplete tasks: ${response.data.incomplete_tasks.join(', ')}. Advancing anyway.`);
       } else if (response.data.plan_completed) {
@@ -87,31 +92,69 @@ export default function ActionPlans({ githubUsername }: { githubUsername: string
         alert(`Advanced to Day ${response.data.current_day}!`);
       }
 
-      invalidate(); // Reload all data to refresh active plan, tasks, and day number
+      invalidate()
+      loadTodayTasks(activePlan.id)
     } catch (error) {
-      console.error('Failed to advance day:', error);
-      alert('Failed to advance day.');
+      console.error('Failed to advance day:', error)
+      alert('Failed to advance day')
     } finally {
-      setAdvancingDay(false);
+      setAdvancingDay(false)
     }
-  };
+  }
 
-  const handleOptimisticTaskCompletion = (taskId: number, updates: Partial<DailyTask>) => {
-    if (!todayTasks) return;
+  const handleDeletePlan = async (planId: number) => {
+    if (!window.confirm('Are you sure you want to delete this plan? This cannot be undone.')) return
+    try {
+      await axios.delete(`${API_URL}/action-plans/${githubUsername}/${planId}`)
+      invalidate()
+      if (activePlan?.id === planId) {
+        setActivePlan(null)
+        setTodayTasks(null)
+      }
+    } catch (error) {
+      console.error('Failed to delete plan:', error)
+      alert('Failed to delete plan')
+    }
+  }
 
-    setTodayTasks((prev: any) => {
-      if (!prev) return null;
-      return {
-        ...prev,
-        tasks: prev.tasks.map((task: DailyTask) =>
-          task.id === taskId ? { ...task, ...updates } : task
-        )
-      };
-    });
-  };
+  const handleEditPlan = (plan: ActionPlan) => {
+    setEditingPlan(plan)
+    setShowCreateModal(true)
+    setActiveMenuPlanId(null)
+  }
 
-  // Show loading only if we have no plans and context is loading
-  // This prevents flicker if we have cached plans but are revalidating
+  const handleDeleteTask = async (taskId: number) => {
+    if (!activePlan) return
+    if (!window.confirm('Are you sure you want to delete this task?')) return
+
+    try {
+      await axios.delete(`${API_URL}/action-plans/${githubUsername}/${activePlan.id}/tasks/${taskId}`)
+      loadTodayTasks(activePlan.id)
+    } catch (error) {
+      console.error('Failed to delete task:', error)
+      alert('Failed to delete task')
+    }
+  }
+
+  const handleRefresh = () => {
+    invalidate()
+  }
+
+  useEffect(() => {
+    if (plans && plans.length > 0) {
+      const active = plans.find(p => p.status === 'active') || plans[0]
+      setActivePlan(active)
+      loadTodayTasks(active.id)
+    }
+  }, [plans])
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = () => setActiveMenuPlanId(null)
+    document.addEventListener('click', handleClickOutside)
+    return () => document.removeEventListener('click', handleClickOutside)
+  }, [])
+
   if (contextLoading && plans.length === 0) {
     return (
       <div className="text-center py-16 text-[#FBFAEE]/70">
@@ -153,7 +196,10 @@ export default function ActionPlans({ githubUsername }: { githubUsername: string
             </div>
           </div>
           <button
-            onClick={() => setShowCreateModal(true)}
+            onClick={() => {
+              setEditingPlan(null)
+              setShowCreateModal(true)
+            }}
             className="bg-[#FBFAEE] text-black px-6 py-3 rounded-xl font-bold hover:bg-[#FBFAEE]/90 transition flex items-center shadow-lg shadow-white/5 hover:scale-105 active:scale-95"
           >
             <Plus className="w-5 h-5 mr-2" />
@@ -235,6 +281,8 @@ export default function ActionPlans({ githubUsername }: { githubUsername: string
                   githubUsername={githubUsername}
                   onComplete={() => loadTodayTasks(activePlan.id)}
                   onOptimisticComplete={handleOptimisticTaskCompletion}
+                  onEdit={setEditingTask}
+                  onDelete={handleDeleteTask}
                 />
               ))}
             </div>
@@ -243,7 +291,7 @@ export default function ActionPlans({ githubUsername }: { githubUsername: string
             <div className="flex items-center space-x-4 pt-4 border-t border-white/5">
               {todayTasks.tasks.every((t: DailyTask) => t.status === 'completed') ? (
                 <button
-                  onClick={() => handleAdvanceDay(activePlan.id)}
+                  onClick={() => handleAdvanceDay()}
                   disabled={advancingDay}
                   className="flex-1 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-[#FBFAEE] py-3 rounded-xl font-bold transition-all transform hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 flex items-center justify-center shadow-lg shadow-green-500/20"
                 >
@@ -286,7 +334,10 @@ export default function ActionPlans({ githubUsername }: { githubUsername: string
             <h3 className="text-xl font-semibold mb-2 text-[#FBFAEE]">No action plans yet</h3>
             <p className="text-[#FBFAEE]/70 mb-6">Create your first 30-day learning plan</p>
             <button
-              onClick={() => setShowCreateModal(true)}
+              onClick={() => {
+                setEditingPlan(null)
+                setShowCreateModal(true)
+              }}
               className="bg-gradient-to-r from-[#933DC9] to-[#53118F] text-[#FBFAEE] px-6 py-3 rounded-xl font-semibold hover:brightness-110 transition shadow-lg shadow-purple-500/20"
             >
               Create Your First Plan
@@ -294,13 +345,53 @@ export default function ActionPlans({ githubUsername }: { githubUsername: string
           </div>
         ) : (
           plans.map(plan => (
-            <PlanCard
-              key={plan.id}
-              plan={plan}
-              expanded={expandedPlan === plan.id}
-              onToggle={() => setExpandedPlan(expandedPlan === plan.id ? null : plan.id)}
-              onRefresh={handleRefresh}
-            />
+            <div key={plan.id} className="relative group">
+              <PlanCard
+                plan={plan}
+                expanded={expandedPlan === plan.id}
+                onToggle={() => setExpandedPlan(expandedPlan === plan.id ? null : plan.id)}
+                onRefresh={handleRefresh}
+              />
+
+              {/* Menu Button */}
+              <div className="absolute top-5 right-14 z-10">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setActiveMenuPlanId(activeMenuPlanId === plan.id ? null : plan.id)
+                  }}
+                  className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+                >
+                  <ChevronDown className="w-4 h-4 text-[#FBFAEE]/60" />
+                </button>
+
+                {/* Dropdown */}
+                {activeMenuPlanId === plan.id && (
+                  <div className="absolute right-0 top-full mt-2 w-32 bg-[#1a1a1a] border border-white/10 rounded-xl shadow-xl z-20 overflow-hidden animate-in fade-in zoom-in-95 duration-100">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleEditPlan(plan)
+                      }}
+                      className="w-full px-4 py-2.5 text-left text-sm text-[#FBFAEE]/80 hover:bg-white/5 hover:text-[#FBFAEE] flex items-center space-x-2 transition-colors"
+                    >
+                      <Edit className="w-3.5 h-3.5" />
+                      <span>Edit</span>
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleDeletePlan(plan.id)
+                      }}
+                      className="w-full px-4 py-2.5 text-left text-sm text-red-400 hover:bg-red-500/10 hover:text-red-300 flex items-center space-x-2 transition-colors"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Delete</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
           ))
         )}
       </div>
@@ -309,10 +400,29 @@ export default function ActionPlans({ githubUsername }: { githubUsername: string
       {showCreateModal && (
         <CreatePlanModal
           githubUsername={githubUsername}
-          onClose={() => setShowCreateModal(false)}
+          initialData={editingPlan}
+          onClose={() => {
+            setShowCreateModal(false)
+            setEditingPlan(null)
+          }}
           onComplete={() => {
             setShowCreateModal(false)
+            setEditingPlan(null)
             invalidate()
+          }}
+        />
+      )}
+
+      {/* Edit Task Modal */}
+      {editingTask && activePlan && (
+        <EditTaskModal
+          task={editingTask}
+          planId={activePlan.id}
+          githubUsername={githubUsername}
+          onClose={() => setEditingTask(null)}
+          onComplete={() => {
+            setEditingTask(null)
+            loadTodayTasks(activePlan.id)
           }}
         />
       )}
@@ -320,11 +430,12 @@ export default function ActionPlans({ githubUsername }: { githubUsername: string
   )
 }
 
-// --- Helper Components (Moved from JSX file and typed) ---
+// --- Helper Components ---
 
-function TaskCard({ task, planId, githubUsername, onComplete, onOptimisticComplete }: TaskCardProps) {
+function TaskCard({ task, planId, githubUsername, onComplete, onOptimisticComplete, onEdit, onDelete }: TaskCardProps) {
   const [completing, setCompleting] = useState(false)
   const [showFeedback, setShowFeedback] = useState(false)
+  const [showMenu, setShowMenu] = useState(false)
   const [timeSpent, setTimeSpent] = useState<string>('')
   const [difficulty, setDifficulty] = useState(3)
   const [notes, setNotes] = useState('')
@@ -386,7 +497,6 @@ function TaskCard({ task, planId, githubUsername, onComplete, onOptimisticComple
           <Brain className="w-5 h-5 mr-2 text-[#C488F8]" />
           <h4 className="font-semibold text-[#C488F8]">AI Feedback</h4>
         </div>
-        {/* Using MarkdownRenderer here to display the AI feedback content */}
         <div className="text-sm text-[#FBFAEE]/70 leading-relaxed prose prose-invert max-w-none">
           <MarkdownRenderer content={feedback} />
         </div>
@@ -401,10 +511,46 @@ function TaskCard({ task, planId, githubUsername, onComplete, onOptimisticComple
   }
 
   return (
-    <div className="bg-black/20 border border-white/5 rounded-xl p-4 hover:border-[#933DC9]/50 transition-all hover:bg-black/30 group">
+    <div className="bg-black/20 border border-white/5 rounded-xl p-4 hover:border-[#933DC9]/50 transition-all hover:bg-black/30 group relative">
       <div className="flex items-start justify-between mb-3">
         <div className="flex-1">
-          <h4 className="font-semibold text-[#FBFAEE] mb-1 group-hover:text-[#C488F8] transition-colors">{task.title}</h4>
+          <div className="flex justify-between items-start">
+            <h4 className="font-semibold text-[#FBFAEE] mb-1 group-hover:text-[#C488F8] transition-colors pr-8">{task.title}</h4>
+
+            {/* Task Menu */}
+            <div className="relative">
+              <button
+                onClick={(e) => { e.stopPropagation(); setShowMenu(!showMenu); }}
+                className="p-1 hover:bg-white/10 rounded text-[#FBFAEE]/40 hover:text-[#FBFAEE] transition-colors"
+              >
+                <ChevronDown className="w-4 h-4" />
+              </button>
+
+              {showMenu && (
+                <div className="absolute right-0 top-full mt-1 w-32 bg-[#1a1a1a] border border-white/10 rounded-xl shadow-xl z-20 overflow-hidden animate-in fade-in zoom-in-95 duration-100">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setShowMenu(false); onEdit(task); }}
+                    className="w-full px-4 py-2 text-left text-xs text-[#FBFAEE]/80 hover:bg-white/5 hover:text-[#FBFAEE] flex items-center space-x-2"
+                  >
+                    <Edit className="w-3 h-3" />
+                    <span>Edit</span>
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setShowMenu(false); onDelete(task.id); }}
+                    className="w-full px-4 py-2 text-left text-xs text-red-400 hover:bg-red-500/10 hover:text-red-300 flex items-center space-x-2"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                    <span>Delete</span>
+                  </button>
+                </div>
+              )}
+              {/* Overlay to close menu */}
+              {showMenu && (
+                <div className="fixed inset-0 z-10" onClick={() => setShowMenu(false)}></div>
+              )}
+            </div>
+          </div>
+
           <p className="text-sm text-[#FBFAEE]/70">{task.description}</p>
           <div className="flex items-center space-x-3 mt-2 text-xs text-[#FBFAEE]/60">
             <span className="flex items-center">
@@ -545,7 +691,7 @@ function PlanCard({ plan, expanded, onToggle, onRefresh }: PlanCardProps) {
   )
 }
 
-function CreatePlanModal({ githubUsername, onClose, onComplete }: CreatePlanModalProps) {
+function CreatePlanModal({ githubUsername, onClose, onComplete, initialData }: CreatePlanModalProps) {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [focusArea, setFocusArea] = useState('')
@@ -554,12 +700,25 @@ function CreatePlanModal({ githubUsername, onClose, onComplete }: CreatePlanModa
   const [hoursPerDay, setHoursPerDay] = useState(2)
   const [submitting, setSubmitting] = useState(false)
 
+  useEffect(() => {
+    if (initialData) {
+      setTitle(initialData.title || '')
+      setDescription(initialData.description || '')
+      setFocusArea(initialData.focus_area || '')
+      if (initialData.skills_to_focus && initialData.skills_to_focus.skills) {
+        setSkills(initialData.skills_to_focus.skills.map((s: any) => s.name).join(', '))
+      } else {
+        setSkills('')
+      }
+    }
+  }, [initialData])
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setSubmitting(true)
 
     try {
-      await axios.post(`${API_URL}/action-plans/${githubUsername}`, {
+      const payload = {
         title,
         description,
         plan_type: '30_day',
@@ -567,12 +726,18 @@ function CreatePlanModal({ githubUsername, onClose, onComplete }: CreatePlanModa
         skills_to_learn: skills.split(',').map(s => s.trim()).filter(s => s),
         current_skill_level: skillLevel,
         available_hours_per_day: hoursPerDay
-      })
+      }
+
+      if (initialData) {
+        await axios.put(`${API_URL}/action-plans/${githubUsername}/${initialData.id}`, payload)
+      } else {
+        await axios.post(`${API_URL}/action-plans/${githubUsername}`, payload)
+      }
 
       onComplete()
     } catch (error) {
-      console.error('Failed to create plan:', error)
-      alert('Failed to create plan')
+      console.error('Failed to save plan:', error)
+      alert('Failed to save plan')
     } finally {
       setSubmitting(false)
     }
@@ -582,7 +747,9 @@ function CreatePlanModal({ githubUsername, onClose, onComplete }: CreatePlanModa
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
       <div className="glass-card rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-white/10">
         <div className="flex items-center justify-between p-6 border-b border-white/10">
-          <h2 className="text-2xl font-bold text-gradient">Create 30-Day Action Plan</h2>
+          <h2 className="text-2xl font-bold text-gradient">
+            {initialData ? 'Edit Action Plan' : 'Create 30-Day Action Plan'}
+          </h2>
           <button onClick={onClose} className="text-[#FBFAEE]/60 hover:text-[#FBFAEE] transition-colors">
             <X className="w-6 h-6" />
           </button>
@@ -688,7 +855,7 @@ function CreatePlanModal({ githubUsername, onClose, onComplete }: CreatePlanModa
               disabled={submitting || !title || !focusArea || !skills}
               className="flex-1 bg-gradient-to-r from-[#933DC9] to-[#53118F] text-[#FBFAEE] px-6 py-2.5 rounded-xl font-semibold hover:brightness-110 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center shadow-lg shadow-purple-500/20"
             >
-              {submitting ? <Loader2 className="w-5 h-5 mr-2 animate-spin" /> : 'Generate Plan'}
+              {submitting ? <Loader2 className="w-5 h-5 mr-2 animate-spin" /> : (initialData ? 'Save Changes' : 'Generate Plan')}
             </button>
           </div>
         </form>

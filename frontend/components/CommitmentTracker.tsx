@@ -13,6 +13,7 @@ interface CommitmentTrackerProps {
   githubUsername: string
   onReviewComplete: () => void
   onCheckIn: () => void
+  suggestions?: any[]
 }
 
 interface StreakData {
@@ -27,7 +28,8 @@ interface StreakData {
 export default function CommitmentTracker({
   githubUsername,
   onReviewComplete,
-  onCheckIn
+  onCheckIn,
+  suggestions = []
 }: CommitmentTrackerProps) {
   const [todayCommitment, setTodayCommitment] = useState<any>(null)
   const [stats, setStats] = useState<any>(null)

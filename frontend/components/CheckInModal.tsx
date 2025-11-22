@@ -12,6 +12,7 @@ interface CheckInModalProps {
   githubUsername: string
   onClose: () => void
   onComplete: () => void
+  suggestions?: any[]
 }
 
 interface CheckIn {
@@ -26,7 +27,7 @@ interface CheckIn {
   ai_analysis: string | null
 }
 
-export default function CheckInModal({ githubUsername, onClose, onComplete }: CheckInModalProps) {
+export default function CheckInModal({ githubUsername, onClose, onComplete, suggestions = [] }: CheckInModalProps) {
   const [energyLevel, setEnergyLevel] = useState(7)
   const [avoiding, setAvoiding] = useState('')
   const [commitment, setCommitment] = useState('')
@@ -311,19 +312,35 @@ export default function CheckInModal({ githubUsername, onClose, onComplete }: Ch
                   <Target className="w-4 h-4 mr-2 text-green-400" />
                   What will you ship today? <span className="text-red-400 ml-1">*</span>
                 </label>
+
+                {/* Smart Suggestions & Templates */}
                 <div className="flex flex-wrap gap-2 mb-3">
+                  {suggestions.map((suggestion, idx) => (
+                    <button
+                      key={`sugg-${idx}`}
+                      type="button"
+                      onClick={() => setCommitment(suggestion.title)}
+                      className={`px-3 py-1.5 bg-gradient-to-r ${suggestion.type === 'Action Plan' ? 'from-[#933DC9] to-[#53118F]' : 'from-orange-600 to-orange-700'} text-[#FBFAEE] text-xs rounded-full transition hover:scale-105 hover:shadow-lg border border-white/20 flex items-center space-x-1 animate-in fade-in slide-in-from-bottom-2 duration-500`}
+                      style={{ animationDelay: `${idx * 100}ms` }}
+                    >
+                      <Zap className="w-3 h-3 text-yellow-300" />
+                      <span>{suggestion.title.length > 25 ? suggestion.title.substring(0, 23) + '...' : suggestion.title}</span>
+                    </button>
+                  ))}
+
                   {commitmentTemplates.map((template, idx) => (
                     <button
                       key={idx}
                       type="button"
                       onClick={() => setCommitment(template.text)}
-                      className={`px-3 py-1.5 bg-gradient-to-r ${template.color} text-[#FBFAEE] text-xs rounded-full transition hover:scale-105 hover:shadow-lg border border-white/20 flex items-center space-x-1`}
+                      className={`px-3 py-1.5 bg-gradient-to-r ${template.color} text-[#FBFAEE] text-xs rounded-full transition hover:scale-105 hover:shadow-lg border border-white/20 flex items-center space-x-1 opacity-80 hover:opacity-100`}
                     >
                       <span>{template.icon}</span>
                       <span>{template.text.length > 20 ? template.text.substring(0, 18) + '...' : template.text}</span>
                     </button>
                   ))}
                 </div>
+
                 <textarea
                   value={commitment}
                   onChange={(e) => setCommitment(e.target.value)}
@@ -332,7 +349,6 @@ export default function CheckInModal({ githubUsername, onClose, onComplete }: Ch
                   placeholder="Define 'done'. Example: 'Deploy feature X', not 'Work on feature X'"
                   className="w-full px-4 py-3 bg-[#000000]/50 border border-[#242424]/60 text-[#FBFAEE] placeholder-[#FBFAEE]/40 rounded-xl focus:ring-2 focus:ring-[#933DC9] focus:border-[#933DC9] resize-none transition duration-150"
                   rows={2}
-                  required
                 />
                 <FirstTimeTooltip
                   id="first_checkin_commitment"

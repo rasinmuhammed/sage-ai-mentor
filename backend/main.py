@@ -11,7 +11,10 @@ from routers import (
     commitments,
     insights,
     dashboard,
-    system
+    system,
+    analytics,
+    learning,
+    leetcode
 )
 
 @asynccontextmanager
@@ -53,6 +56,9 @@ app.include_router(action_plans.router, tags=["Action Plans"])
 app.include_router(pomodoro.router, tags=["Pomodoro"])
 app.include_router(commitments.router, tags=["Commitments"])
 app.include_router(insights.router, tags=["Insights"])
+app.include_router(analytics.router, tags=["Analytics"])
+app.include_router(learning.router, tags=["Learning"])
+app.include_router(leetcode.router, tags=["LeetCode"])
 app.include_router(notifications.router, tags=["Notifications"])
 
 @app.get("/")

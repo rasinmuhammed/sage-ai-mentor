@@ -799,33 +799,95 @@ class SageMentorCrew:
             # Detect sections
             if 'obstacle' in line.lower() or 'challenge' in line.lower():
                 current_section = 'obstacles'
-            elif 'insight' in line.lower() or 'finding' in line.lower():
-                current_section = 'insights'
-            elif 'recommend' in line.lower() or 'action' in line.lower() or 'strategy' in line.lower():
+            elif 'recommendation' in line.lower() or 'strategy' in line.lower():
                 current_section = 'recommendations'
+            elif 'insight' in line.lower() or 'key' in line.lower():
+                current_section = 'insights'
             
-            # Extract content
-            if line.startswith('-') or line.startswith('•') or line[0].isdigit():
-                clean_line = line.lstrip('-•0123456789. ').strip()
+            # Parse content based on section
+            if line.strip().startswith('-') or line.strip().startswith('•') or line[0].isdigit():
+                content = line.lstrip('-•1234567890. ').strip()
                 if current_section == 'obstacles':
-                    obstacles.append(clean_line)
-                elif current_section == 'insights':
-                    insights.append(clean_line)
+                    obstacles.append(content)
                 elif current_section == 'recommendations':
-                    recommendations.append(clean_line)
-        
-        # Extract subgoals from the analysis
-        suggested_subgoals = self._extract_subgoals(analysis)
+                    recommendations.append(content)
+                elif current_section == 'insights':
+                    insights.append(content)
         
         return {
-            "analysis": analysis,
             "insights": insights[:5],
-            "obstacles": obstacles[:5],
-            "recommendations": recommendations[:5],
-            "suggested_subgoals": suggested_subgoals,
-            "feasibility_score": self._extract_score(analysis),
-            "estimated_duration": self._estimate_duration(analysis)
+            "obstacles": obstacles[:3],
+            "recommendations": recommendations[:5]
         }
+
+    async def summarize_content(self, text: str, context: str = None, api_key: str = None) -> Dict:
+        """Summarize learning content (e.g. transcripts)"""
+        self._ensure_agents(api_key)
+        
+        summary_task = Task(
+            description=f"""Summarize this learning content effectively:
+            
+            Content:
+            "{text[:4000]}..." (truncated if too long)
+            
+            Context: {context if context else "General learning"}
+            
+            Your job:
+            1. Extract the core concept (EL15 - Explain Like I'm 15)
+            2. Extract any code snippets or technical commands
+            3. List 3 key takeaways
+            4. Identify what problem this solves
+            
+            Format as Markdown.""",
+            agent=self.analyst,
+            expected_output="Concise summary with code snippets and key takeaways"
+        )
+        
+        crew = Crew(
+            agents=[self.analyst],
+            tasks=[summary_task],
+            process=Process.sequential,
+            verbose=False
+        )
+        
+        result = await asyncio.to_thread(crew.kickoff)
+        return {"summary": str(result)}
+
+    async def review_code(self, code: str, language: str, problem_title: str, description: str = None, api_key: str = None) -> Dict:
+        """Review code for complexity and style"""
+        self._ensure_agents(api_key)
+        
+        review_task = Task(
+            description=f"""Review this {language} solution for '{problem_title}':
+            
+            Code:
+            ```{language}
+            {code}
+            ```
+            
+            {f"Problem Description: {description}" if description else ""}
+            
+            Your job:
+            1. Analyze Time & Space Complexity (Big O)
+            2. Critique Code Style (Clean Code principles)
+            3. Suggest one optimization or alternative approach
+            4. Rate the solution quality (1-5)
+            
+            Be constructive but strict about efficiency.""",
+            agent=self.analyst,
+            expected_output="Code review with complexity analysis and style critique"
+        )
+        
+        crew = Crew(
+            agents=[self.analyst],
+            tasks=[review_task],
+            process=Process.sequential,
+            verbose=False
+        )
+        
+        result = await asyncio.to_thread(crew.kickoff)
+        return {"review": str(result)}
+
     
     def _extract_subgoals(self, text: str) -> List[Dict]:
         """Extract suggested subgoals from analysis"""

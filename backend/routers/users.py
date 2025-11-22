@@ -4,6 +4,7 @@ from sqlalchemy import select
 from database import get_system_db, init_user_db
 import models
 from models import UserCreate, UserResponse, DatabaseConfig
+from services import email_service
 
 router = APIRouter()
 
@@ -32,6 +33,14 @@ async def create_user(user: UserCreate, db: AsyncSession = Depends(get_system_db
     await db.refresh(new_user)
     
     print(f"✅ Created new user: {user.github_username}")
+    
+    if user.email:
+        # Fire and forget welcome email
+        try:
+            await email_service.send_welcome_email(user.email, user.github_username)
+        except Exception as e:
+            print(f"⚠️ Failed to send welcome email: {e}")
+            
     return new_user
 
 @router.get("/users/{github_username}", response_model=UserResponse)
