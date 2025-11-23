@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, time
 import models
 from models import CheckInCreate, CheckInUpdate, CheckInResponse
 from database import get_user_db, get_system_db
-from services import sage_crew
+from services import sage_crew, gamification_service
 from cache import cached, invalidate_user_cache
 
 router = APIRouter()
@@ -241,12 +241,18 @@ async def get_pending_commitments(
         ]
     }
 
+from services import sage_crew, gamification_service
+from cache import cached, invalidate_user_cache
+
+# ... (existing code)
+
 @router.post("/commitments/{github_username}/{checkin_id}/review")
 async def review_commitment(
     github_username: str,
     checkin_id: int,
     review: CheckInUpdate,
-    db: AsyncSession = Depends(get_user_db)
+    db: AsyncSession = Depends(get_user_db),
+    system_db: AsyncSession = Depends(get_system_db)
 ):
     result = await db.execute(select(models.CheckIn).filter(models.CheckIn.id == checkin_id))
     checkin = result.scalars().first()
@@ -257,6 +263,11 @@ async def review_commitment(
     checkin.excuse = review.excuse
     await db.commit()
     await db.refresh(checkin)
+    
+    # Gamification: Award XP and update streak if shipped
+    if review.shipped:
+        await gamification_service.award_xp(system_db, checkin.user_id, 50, "Daily Commitment Shipped")
+        await gamification_service.update_streak(system_db, checkin.user_id)
     
     result = await db.execute(select(models.CheckIn).filter(
         models.CheckIn.user_id == checkin.user_id,

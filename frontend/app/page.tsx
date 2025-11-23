@@ -3,8 +3,8 @@
 import { useUser } from '@clerk/nextjs'
 import { useState, useEffect } from 'react'
 import Dashboard from '../components/Dashboard'
-import Onboarding from '../components/Onboarding'
-import LandingPage from '../components/LandingPage'
+import Onboarding from '../components/features/onboarding/Onboarding'
+import LandingPage from '../components/features/onboarding/LandingPage'
 import { Loader2 } from 'lucide-react'
 
 export default function Home() {
@@ -35,7 +35,7 @@ export default function Home() {
         githubUsername: username
       }
     })
-    
+
     setGithubUsername(username)
     setIsOnboarded(true)
   }

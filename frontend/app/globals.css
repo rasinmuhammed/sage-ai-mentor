@@ -1,21 +1,27 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  /* Premium Obsidian Palette */
+  --background: #050505;
+  /* Deep Obsidian */
+  --foreground: #EDEDED;
+  --primary: #933DC9;
+  --primary-glow: #C488F8;
+  --accent: #3B82F6;
+  /* Neon Blue */
+  --success: #10B981;
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-bg: rgba(20, 20, 20, 0.6);
 }
 
 body {
   color: var(--foreground);
   background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background-image:
+    radial-gradient(circle at 50% 0%, rgba(147, 61, 201, 0.15) 0%, transparent 50%),
+    radial-gradient(circle at 80% 10%, rgba(59, 130, 246, 0.1) 0%, transparent 40%);
+  background-attachment: fixed;
 }
 
 @layer utilities {
@@ -24,41 +30,85 @@ body {
   }
 }
 
-/* Custom Animations */
-@keyframes shimmer {
-  0% {
-    transform: translateX(-100%);
-  }
+/* --- Premium Glassmorphism --- */
+.glass-panel {
+  background: var(--glass-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--glass-border);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+}
+
+.glass-card {
+  background: linear-gradient(145deg, rgba(30, 30, 30, 0.6) 0%, rgba(10, 10, 10, 0.8) 100%);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  transition: all 0.3s ease;
+}
+
+.glass-card:hover {
+  border-color: rgba(147, 61, 201, 0.3);
+  box-shadow: 0 8px 30px rgba(147, 61, 201, 0.1);
+  transform: translateY(-2px);
+}
+
+.glass-button {
+  background: rgba(147, 61, 201, 0.1);
+  border: 1px solid rgba(147, 61, 201, 0.2);
+  backdrop-filter: blur(4px);
+  transition: all 0.2s ease;
+}
+
+.glass-button:hover {
+  background: rgba(147, 61, 201, 0.2);
+  border-color: rgba(147, 61, 201, 0.4);
+  box-shadow: 0 0 15px rgba(147, 61, 201, 0.3);
+}
+
+/* --- Text Gradients --- */
+.text-gradient {
+  background: linear-gradient(to right, #C488F8, #933DC9);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.text-gradient-blue {
+  background: linear-gradient(to right, #60A5FA, #3B82F6);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* --- Animations --- */
+@keyframes breathe {
+
+  0%,
   100% {
-    transform: translateX(100%);
+    box-shadow: 0 0 20px rgba(147, 61, 201, 0.2);
+    border-color: rgba(147, 61, 201, 0.3);
   }
-}
 
-.animate-shimmer {
-  animation: shimmer 2s infinite;
-}
-
-@keyframes pulse-slow {
-  0%, 100% {
-    opacity: 0.5;
-    transform: scale(1);
-  }
   50% {
-    opacity: 0.8;
-    transform: scale(1.05);
+    box-shadow: 0 0 40px rgba(147, 61, 201, 0.5);
+    border-color: rgba(147, 61, 201, 0.6);
   }
 }
 
-.animate-pulse-slow {
-  animation: pulse-slow 8s ease-in-out infinite;
+.animate-breathe {
+  animation: breathe 3s ease-in-out infinite;
 }
 
 @keyframes float {
-  0%, 100% {
+
+  0%,
+  100% {
     transform: translateY(0px);
   }
+
   50% {
-    transform: translateY(-20px);
+    transform: translateY(-10px);
   }
 }
 
@@ -66,7 +116,7 @@ body {
   animation: float 6s ease-in-out infinite;
 }
 
-/* Smooth scrollbar */
+/* --- Scrollbar --- */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -77,33 +127,10 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(147, 61, 201, 0.3);
+  background: rgba(255, 255, 255, 0.1);
   border-radius: 10px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(147, 61, 201, 0.6);
-}
-
-/* Glass morphism effect */
-.glass {
-  background: rgba(36, 36, 36, 0.4);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-}
-
-.glass-card {
-  background: linear-gradient(145deg, rgba(36, 36, 36, 0.6) 0%, rgba(20, 20, 20, 0.8) 100%);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
-}
-
-/* Text gradient */
-.text-gradient {
-  background: linear-gradient(to right, #C488F8, #933DC9);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  background: rgba(255, 255, 255, 0.2);
 }

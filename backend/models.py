@@ -20,6 +20,13 @@ class User(SystemBase):
     neon_db_url = Column(String(500), nullable=True)
     neon_api_key = Column(String(500), nullable=True) # Optional, if we need to manage it
     
+    # Gamification
+    total_xp = Column(Integer, default=0)
+    current_streak = Column(Integer, default=0)
+    best_streak = Column(Integer, default=0)
+    last_activity_date = Column(DateTime, nullable=True)
+    level = Column(Integer, default=1)
+    
     # NOTE: Relationships to User DB models are removed because they live in a different database.
     # We will query them using the user's dynamic DB connection.
 
@@ -374,6 +381,12 @@ class UserResponse(BaseModel):
     email: Optional[str]
     onboarding_complete: bool
     neon_db_url: Optional[str] = None
+    
+    # Gamification
+    total_xp: int = 0
+    current_streak: int = 0
+    best_streak: int = 0
+    level: int = 1
     
     class Config:
         from_attributes = True

@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 import models
 from models import ActionPlanCreate, ActionPlanResponse, DailyTaskResponse, DailyTaskUpdate, TodaysTasksResponse
 from database import get_user_db, get_system_db
-from services import action_plan_service
+from services import action_plan_service, gamification_service
 
 router = APIRouter()
 
@@ -247,6 +247,10 @@ async def complete_daily_task(
     
     task.ai_feedback = feedback['feedback']
     await db.commit()
+    
+    # Gamification: Award XP for task completion
+    await gamification_service.award_xp(system_db, user.id, 10, "Daily Task Completed")
+    await gamification_service.update_streak(system_db, user.id)
     
     return {"message": "Task completed", "ai_feedback": feedback}
 

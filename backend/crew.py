@@ -1029,51 +1029,80 @@ class SageMentorCrew:
         return any(word in feedback.lower() for word in warning_words)
     
     async def weekly_goals_review(self, user_id: int, db) -> Dict:
-        """Weekly review of all active goals"""
+        """Comprehensive weekly review of performance"""
         
+        # Calculate date range (last 7 days)
+        end_date = datetime.utcnow()
+        start_date = end_date - datetime.timedelta(days=7)
+        
+        # 1. Fetch Active Goals
         result = await db.execute(select(models.Goal).filter(
             models.Goal.user_id == user_id,
             models.Goal.status == 'active'
         ).options(selectinload(models.Goal.subgoals)))
-        goals = result.scalars().all()
+        active_goals = result.scalars().all()
         
-        if not goals:
-            return {"message": "No active goals to review"}
+        # 2. Fetch Completed Goals (Last 7 days)
+        result = await db.execute(select(models.Goal).filter(
+            models.Goal.user_id == user_id,
+            models.Goal.status == 'completed',
+            models.Goal.completed_at >= start_date
+        ))
+        completed_goals = result.scalars().all()
+        
+        # 3. Fetch Completed Tasks (Last 7 days) - Joining via SubGoal -> Goal
+        # Note: This might be complex if tasks are not directly linked to user_id (they are via SubGoal->Goal)
+        # Simplified: Fetch all tasks via subgoals of user's goals
+        # Ideally we should have a simpler query, but let's iterate for now or use a join
+        # Actually, let's look at CheckIns for consistency
+        
+        result = await db.execute(select(models.CheckIn).filter(
+            models.CheckIn.user_id == user_id,
+            models.CheckIn.timestamp >= start_date
+        ))
+        checkins = result.scalars().all()
+        
+        # 4. Calculate Metrics
+        shipped_days = len([c for c in checkins if c.shipped])
+        total_checkins = len(checkins)
+        consistency_score = (shipped_days / 7) * 100 # Simple consistency
+        
+        # Estimate focus hours (assuming 2 hours per shipped checkin + random factor or real data if we had it)
+        focus_hours = shipped_days * 2 # Placeholder
+        
+        week_score = int((consistency_score * 0.6) + (min(len(completed_goals) * 20, 40))) # Weight consistency and goals
         
         goals_summary = []
-        for goal in goals:
-            result = await db.execute(select(models.GoalProgress).filter(
-                models.GoalProgress.goal_id == goal.id
-            ).order_by(models.GoalProgress.timestamp.desc()).limit(1))
-            recent_progress = result.scalars().first()
-            
+        for goal in active_goals:
             goals_summary.append({
                 "title": goal.title,
                 "progress": goal.progress,
-                "priority": goal.priority,
-                "target_date": goal.target_date.strftime("%Y-%m-%d") if goal.target_date else "No deadline",
-                "last_update": recent_progress.timestamp.strftime("%Y-%m-%d") if recent_progress else "Never",
-                "subgoals_completed": len([sg for sg in goal.subgoals if sg.status == "completed"]),
-                "subgoals_total": len(goal.subgoals)
+                "priority": goal.priority
             })
+            
+        completed_summary = [g.title for g in completed_goals]
         
         review_task = Task(
-            description=f"""Weekly goals review:
+            description=f"""Weekly Performance Review:
             
-            Active Goals:
+            Metrics:
+            - Week Score: {week_score}/100
+            - Consistency: {shipped_days}/7 days shipped
+            - Goals Completed: {len(completed_goals)} ({', '.join(completed_summary)})
+            - Active Goals: {len(active_goals)}
+            
+            Active Goals Status:
             {json.dumps(goals_summary, indent=2)}
             
             Your job:
-            1. Which goal should be the TOP priority this week?
-            2. Any goals that are neglected or stalling?
-            3. Any goals that should be paused or abandoned?
-            4. Are they spreading too thin across too many goals?
-            5. Suggest the ONE goal to make significant progress on
-            6. Create specific weekly commitment (X hours on Y goal)
+            1. Give a 1-sentence summary of their week (Encouraging or Tough Love based on score)
+            2. Highlight the biggest win (or lack thereof)
+            3. Suggest ONE focus for next week
+            4. Rate their momentum (Building, Stalling, Crashing)
             
-            Be ruthless about prioritization. Less is more.""",
+            Keep it concise and punchy.""",
             agent=self.strategist,
-            expected_output="Weekly priority guidance with specific focus"
+            expected_output="Concise weekly review summary"
         )
         
         crew = Crew(
@@ -1086,11 +1115,14 @@ class SageMentorCrew:
         result = await asyncio.to_thread(crew.kickoff)
         
         return {
-            "review": str(result),
-            "goals_count": len(goals),
-            "needs_reprioritization": self._needs_reprioritization(goals_summary)
+            "review_text": str(result),
+            "week_score": week_score,
+            "focus_hours": focus_hours,
+            "completed_goals": completed_summary,
+            "active_goals_count": len(active_goals),
+            "shipped_days": shipped_days
         }
-    
+
     def _needs_reprioritization(self, goals: List[Dict]) -> bool:
         """Check if user has too many active goals"""
         high_priority = len([g for g in goals if g['priority'] in ['critical', 'high']])

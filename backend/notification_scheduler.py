@@ -63,20 +63,47 @@ async def process_weekly_emails():
                     continue
                     
                 try:
-                    # Placeholder stats (in real app, fetch from DB)
-                    report = {
-                        "week_score": 85,
-                        "completed_goals": ["Finish Phase 9", "Deploy to Prod"],
-                        "focus_hours": 12.5,
-                        "top_skills": ["Python", "React"]
-                    }
+                    # Create user DB session
+                    engine = get_user_db_engine(user.neon_db_url)
+                    UserSessionLocal = sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
                     
-                    await email_service.send_weekly_review(user.email, user.github_username, report)
+                    async with UserSessionLocal() as user_db:
+                        # Generate report using Sage Crew
+                        from services import sage_crew
+                        report = await sage_crew.weekly_goals_review(user.id, user_db)
+                        
+                        # Send email
+                        await email_service.send_weekly_review(user.email, user.github_username, report)
+                        print(f"✅ Sent weekly review to {user.github_username}")
                     
                 except Exception as e:
                     print(f"❌ Error sending weekly email to {user.github_username}: {e}")
         except Exception as e:
              print(f"❌ Error fetching users for weekly email: {e}")
+
+async def process_nudge_emails():
+    """Send nudge emails to inactive users"""
+    print("📧 Processing nudge emails...")
+    async with SystemSessionLocal() as system_db:
+        try:
+            result = await system_db.execute(select(models.User))
+            users = result.scalars().all()
+            
+            for user in users:
+                if not user.email:
+                    continue
+                
+                # Check inactivity
+                if user.last_activity_date:
+                    days_inactive = (datetime.utcnow() - user.last_activity_date).days
+                    if days_inactive >= 2:
+                        try:
+                            await email_service.send_nudge_email(user.email, user.github_username, days_inactive)
+                            print(f"✅ Sent nudge email to {user.github_username} ({days_inactive} days inactive)")
+                        except Exception as e:
+                            print(f"❌ Error sending nudge to {user.github_username}: {e}")
+        except Exception as e:
+            print(f"❌ Error checking inactivity: {e}")
 
 def run_async_job(job_func):
     """Helper to run async jobs synchronously"""
@@ -89,12 +116,14 @@ def run_scheduler():
     print("   - Notifications: Every 30 mins")
     print("   - Daily Digest: 08:00 AM")
     print("   - Weekly Review: Sunday 08:00 PM")
+    print("   - Nudge Emails: Daily 10:00 AM")
     print("Press Ctrl+C to stop\n")
     
     # Schedule jobs
     schedule.every(30).minutes.do(lambda: run_async_job(check_notifications))
     schedule.every().day.at("08:00").do(lambda: run_async_job(process_daily_emails))
     schedule.every().sunday.at("20:00").do(lambda: run_async_job(process_weekly_emails))
+    schedule.every().day.at("10:00").do(lambda: run_async_job(process_nudge_emails))
     
     # Run once on startup for testing (optional, maybe comment out in prod)
     # run_async_job(check_notifications)

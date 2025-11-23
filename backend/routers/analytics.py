@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from database import get_user_db as get_db, get_system_db
-from models import User, Goal, ActionPlan, DailyTask, PomodoroSession
+from models import User, Goal, ActionPlan, DailyTask, PomodoroSession, CheckIn
 from typing import Dict, List
 from datetime import datetime, timedelta
 
@@ -45,15 +45,40 @@ async def get_analytics(
     
     focus_chart_data = [{"name": k, "value": v} for k, v in focus_distribution.items()]
 
-    # 3. Activity Heatmap (Mocked for now, ideally from DailyTasks + GitHub)
-    # In a real app, we'd query DailyTasks grouped by date
-    today = datetime.now().date()
+    # 3. Activity Heatmap (Real Data)
+    # Query DailyTasks completed in last 30 days
+    thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+    
+    tasks_result = await db.execute(
+        select(func.date(DailyTask.completed_at), func.count(DailyTask.id))
+        .filter(DailyTask.status == 'completed')
+        .filter(DailyTask.completed_at >= thirty_days_ago)
+        .group_by(func.date(DailyTask.completed_at))
+    )
+    daily_task_counts = {str(row[0]): row[1] for row in tasks_result.all()}
+    
+    # Query Shipped Commitments (CheckIns) in last 30 days
+    commitments_result = await db.execute(
+        select(func.date(CheckIn.timestamp), func.count(CheckIn.id))
+        .filter(CheckIn.shipped == True)
+        .filter(CheckIn.timestamp >= thirty_days_ago)
+        .group_by(func.date(CheckIn.timestamp))
+    )
+    commitment_counts = {str(row[0]): row[1] for row in commitments_result.all()}
+    
+    # Combine and format
     activity_data = []
+    today = datetime.utcnow().date()
     for i in range(30):
         date = today - timedelta(days=i)
+        date_str = date.isoformat()
+        
+        task_count = daily_task_counts.get(date_str, 0)
+        commitment_count = commitment_counts.get(date_str, 0)
+        
         activity_data.append({
-            "date": date.isoformat(),
-            "count": (i * 3) % 10 # Dummy pattern
+            "date": date_str,
+            "count": task_count + commitment_count
         })
     activity_data.reverse()
 

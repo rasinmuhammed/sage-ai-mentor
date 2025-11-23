@@ -29,31 +29,47 @@ import {
   CheckCircle,
   Code
 } from 'lucide-react'
-import CheckInModal from './CheckInModal'
-import Chat from './Chat'
-import LifeDecisions from './LifeDecisions'
-import Goals from './Goals'
-import ActionPlans from './ActionPlans'
-import Notifications from './Notifications'
-import PomodoroTimer from './PomodoroTimer'
-import NotificationBell from './NotificationBell'
-import AIInsightsFeed from './AIInsightsFeed'
-import QuickActionPills from './QuickActionPills'
-import InteractionHistory from './InteractionHistory'
+import dynamic from 'next/dynamic'
+import CheckInModal from './features/checkin/CheckInModal'
+import PomodoroTimer from './features/productivity/PomodoroTimer'
+import NotificationBell from './features/notifications/NotificationBell'
+import AIInsightsFeed from './features/analytics/AIInsightsFeed'
+import QuickActionPills from './shared/QuickActionPills'
+import InteractionHistory from './features/chat/InteractionHistory'
 import { updateOnboardingProgress } from '@/lib/onboardingStorage'
-import OnboardingCelebration from './OnboardingCelebration'
-import SettingsComponent from './Settings'
+import OnboardingCelebration from './features/onboarding/OnboardingCelebration'
 import GradientLayout from './ui/GradientLayout'
 import { DashboardProvider, useDashboard } from '@/contexts/DashboardContext'
-import CommitmentTracker from './CommitmentTracker'
-import CommitmentCalendar from './CommitmentCalendar'
-import Analytics from './Analytics'
-import Learning from './Learning'
-import Dojo from './Dojo'
-import CommandPalette from './CommandPalette'
-import MorningStandup from './MorningStandup'
-import FlowMode from './FlowMode'
-import UnifiedDashboard from './UnifiedDashboard'
+import CommitmentTracker from './features/analytics/CommitmentTracker'
+import CommitmentCalendar from './features/analytics/CommitmentCalendar'
+import CommandPalette from './shared/CommandPalette'
+import MorningStandup from './features/productivity/MorningStandup'
+import FlowMode from './features/productivity/FlowMode'
+import TwoMinuteTimer from './features/productivity/TwoMinuteTimer'
+import UnifiedDashboard from './features/analytics/UnifiedDashboard'
+
+// Lazy load heavy components
+const Chat = dynamic(() => import('./features/chat/Chat'), {
+  loading: () => <div className="h-full flex items-center justify-center"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#933DC9]" /></div>
+})
+const LifeDecisions = dynamic(() => import('./features/life-decisions/LifeDecisions'), {
+  loading: () => <div className="h-full flex items-center justify-center"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#933DC9]" /></div>
+})
+const Goals = dynamic(() => import('./features/goals/Goals'), {
+  loading: () => <div className="h-full flex items-center justify-center"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#933DC9]" /></div>
+})
+const Notifications = dynamic(() => import('./features/notifications/Notifications'), {
+  loading: () => <div className="h-full flex items-center justify-center"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#933DC9]" /></div>
+})
+const SettingsComponent = dynamic(() => import('./features/settings/Settings'), {
+  loading: () => <div className="h-full flex items-center justify-center"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#933DC9]" /></div>
+})
+const Analytics = dynamic(() => import('./features/analytics/Analytics'), {
+  loading: () => <div className="h-full flex items-center justify-center"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#933DC9]" /></div>
+})
+const LearningHub = dynamic(() => import('./features/learning/LearningHub'), {
+  loading: () => <div className="h-full flex items-center justify-center"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#933DC9]" /></div>
+})
 
 interface DashboardProps {
   githubUsername: string
@@ -83,6 +99,7 @@ function DashboardContent({ githubUsername }: DashboardProps) {
   const [showCelebration, setShowCelebration] = useState(false)
   const [showStandup, setShowStandup] = useState(false)
   const [showFlowMode, setShowFlowMode] = useState(false)
+  const [showTwoMinuteTimer, setShowTwoMinuteTimer] = useState(false)
   const [suggestions, setSuggestions] = useState<any[]>([])
 
   useEffect(() => {
@@ -199,7 +216,6 @@ function DashboardContent({ githubUsername }: DashboardProps) {
     { id: 'overview', label: 'Overview', icon: Activity },
     { id: 'focus', label: 'Focus', icon: Timer },
     { id: 'learning', label: 'Learning', icon: BookOpen },
-    { id: 'dojo', label: 'Dojo', icon: Code },
     { id: 'goals', label: 'Goals', icon: Target },
     { id: 'decisions', label: 'Decisions', icon: Brain },
     { id: 'analytics', label: 'Analytics', icon: BarChart2 },
@@ -227,6 +243,9 @@ function DashboardContent({ githubUsername }: DashboardProps) {
         break
       case 'checkin':
         setShowCheckin(true)
+        break
+      case 'timer':
+        setShowTwoMinuteTimer(true)
         break
     }
   }
@@ -278,8 +297,8 @@ function DashboardContent({ githubUsername }: DashboardProps) {
         </div>
         {/* Render Settings if activeTab is settings (hacky but works for now to allow fixing) */}
         {activeTab === 'analytics' && <Analytics />}
-        {activeTab === 'learning' && <Learning />}
-        {activeTab === 'dojo' && <Dojo />}
+        {activeTab === 'learning' && <LearningHub githubUsername={githubUsername} />}
+        {activeTab === 'dojo' && <LearningHub githubUsername={githubUsername} />}
         {activeTab === 'settings' && <SettingsComponent githubUsername={githubUsername} />}
         {activeTab === 'settings' && (
           <div className="fixed inset-0 z-50 bg-[#0A0A0A]">
@@ -373,7 +392,7 @@ function DashboardContent({ githubUsername }: DashboardProps) {
                 <Zap className="w-3 h-3 text-yellow-400" />
                 <span>Flow</span>
               </button>
-              <NotificationBell />
+              <NotificationBell githubUsername={githubUsername} />
               <div className="h-8 w-px bg-white/10" />
               <UserButton afterSignOutUrl="/" />
             </div>
@@ -383,115 +402,108 @@ function DashboardContent({ githubUsername }: DashboardProps) {
 
       {/* Main Content Area */}
       <main className="flex-1 overflow-hidden relative z-10">
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={activeTab}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            transition={{ duration: 0.2 }}
-            className="h-full"
-          >
-            {activeTab === 'overview' && (
-              <div className="h-full overflow-y-auto p-4 sm:p-8 space-y-8">
-                <header className="space-y-2">
-                  <h1 className="text-3xl font-bold tracking-tight">
-                    Good {new Date().getHours() < 12 ? 'Morning' : new Date().getHours() < 18 ? 'Afternoon' : 'Evening'}, {githubUsername}
-                  </h1>
-                  <p className="text-[#FBFAEE]/60">Here's what's happening in your workspace today.</p>
-                </header>
+        <div className={`h-full ${activeTab === 'overview' ? 'block' : 'hidden'}`}>
+          <div className="h-full overflow-y-auto p-4 sm:p-8 space-y-8">
+            <header className="space-y-2">
+              <h1 className="text-3xl font-bold tracking-tight">
+                Good {new Date().getHours() < 12 ? 'Morning' : new Date().getHours() < 18 ? 'Afternoon' : 'Evening'}, {githubUsername}
+              </h1>
+              <p className="text-[#FBFAEE]/60">Here's what's happening in your workspace today.</p>
+            </header>
 
-                <QuickActionPills onAction={handleQuickAction} />
+            <QuickActionPills onAction={handleQuickAction} />
 
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                  <div className="lg:col-span-2 space-y-8">
-                    <UnifiedDashboard
-                      githubUsername={githubUsername}
-                      onReviewComplete={refresh}
-                      onCheckIn={() => setShowCheckin(true)}
-                      suggestions={suggestions}
-                    />
-                    <CommitmentCalendar githubUsername={githubUsername} />
-                  </div>
-                  <div className="space-y-8">
-                    <PomodoroTimer />
-                    <AIInsightsFeed
-                      insights={data?.recent_advice?.map((advice: any) => ({
-                        id: advice.id,
-                        agent: advice.agent,
-                        advice: advice.advice,
-                        date: advice.date,
-                        type: advice.type
-                      })) || []}
-                      onViewAll={() => setActiveTab('history')}
-                    />
-                    <InteractionHistory githubUsername={githubUsername} limit={3} />
-                  </div>
-                </div>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              <div className="lg:col-span-2 space-y-8">
+                <UnifiedDashboard
+                  githubUsername={githubUsername}
+                  onReviewComplete={refresh}
+                  onCheckIn={() => setShowCheckin(true)}
+                  suggestions={suggestions}
+                  onNavigate={(tab) => setActiveTab(tab as TabType)}
+                />
+                <CommitmentCalendar githubUsername={githubUsername} />
               </div>
-            )}
-
-            {activeTab === 'focus' && (
-              <div className="max-w-2xl mx-auto pt-12 p-4">
-                <PomodoroTimer />
+              <div className="space-y-8">
+                <PomodoroTimer githubUsername={githubUsername} />
+                <AIInsightsFeed
+                  insights={data?.recent_advice?.map((advice: any) => ({
+                    id: advice.id,
+                    agent: advice.agent,
+                    advice: advice.advice,
+                    date: advice.date,
+                    type: advice.type
+                  })) || []}
+                  onViewAll={() => setActiveTab('history')}
+                />
+                <InteractionHistory githubUsername={githubUsername} limit={3} />
               </div>
-            )}
+            </div>
+          </div>
+        </div>
 
-            {activeTab === 'goals' && (
-              <div className="h-full overflow-y-auto p-4 sm:p-8">
-                <Goals githubUsername={githubUsername} />
-              </div>
-            )}
+        <div className={`h-full ${activeTab === 'focus' ? 'block' : 'hidden'}`}>
+          <div className="max-w-2xl mx-auto pt-12 p-4">
+            <PomodoroTimer githubUsername={githubUsername} />
+          </div>
+        </div>
 
-            {activeTab === 'learning' && (
-              <div className="h-full overflow-y-auto p-4 sm:p-8">
-                <Learning />
-              </div>
-            )}
+        <div className={`h-full ${activeTab === 'goals' ? 'block' : 'hidden'}`}>
+          <div className="h-full overflow-y-auto p-4 sm:p-8">
+            <Goals githubUsername={githubUsername} />
+          </div>
+        </div>
 
-            {activeTab === 'dojo' && (
-              <div className="h-full overflow-y-auto p-4 sm:p-8">
-                <Dojo />
-              </div>
-            )}
+        <div className={`h-full ${activeTab === 'learning' ? 'block' : 'hidden'}`}>
+          <div className="h-full overflow-y-auto p-4 sm:p-8">
+            <LearningHub githubUsername={githubUsername} />
+          </div>
+        </div>
 
-            {activeTab === 'decisions' && (
-              <div className="h-full overflow-y-auto p-4 sm:p-8">
-                <LifeDecisions githubUsername={githubUsername} />
-              </div>
-            )}
+        {/* Dojo is now part of LearningHub, but keeping tab for backward compatibility if needed, or remove it */}
+        {/* Removing Dojo tab content as it's in LearningHub now. If user clicks Dojo tab, we should probably redirect or show LearningHub with Dojo active */}
+        <div className={`h-full ${activeTab === 'dojo' ? 'block' : 'hidden'}`}>
+          <div className="h-full overflow-y-auto p-4 sm:p-8">
+            <LearningHub githubUsername={githubUsername} />
+            {/* Ideally we set activeTab to learning and learning tab to dojo, but for now just showing Hub */}
+          </div>
+        </div>
 
-            {activeTab === 'analytics' && (
-              <div className="h-full overflow-y-auto p-4 sm:p-8">
-                <Analytics />
-              </div>
-            )}
+        <div className={`h-full ${activeTab === 'decisions' ? 'block' : 'hidden'}`}>
+          <div className="h-full overflow-y-auto p-4 sm:p-8">
+            <LifeDecisions githubUsername={githubUsername} />
+          </div>
+        </div>
 
-            {activeTab === 'history' && (
-              <div className="h-full overflow-y-auto p-4 sm:p-8">
-                <InteractionHistory githubUsername={githubUsername} />
-              </div>
-            )}
+        <div className={`h-full ${activeTab === 'analytics' ? 'block' : 'hidden'}`}>
+          <div className="h-full overflow-y-auto p-4 sm:p-8">
+            <Analytics />
+          </div>
+        </div>
 
-            {activeTab === 'chat' && (
-              <div className="max-w-6xl mx-auto h-full p-4 sm:p-8">
-                <Chat githubUsername={githubUsername} />
-              </div>
-            )}
+        <div className={`h-full ${activeTab === 'history' ? 'block' : 'hidden'}`}>
+          <div className="h-full overflow-y-auto p-4 sm:p-8">
+            <InteractionHistory githubUsername={githubUsername} />
+          </div>
+        </div>
 
-            {activeTab === 'settings' && (
-              <div className="h-full overflow-y-auto p-4 sm:p-8">
-                <SettingsComponent githubUsername={githubUsername} />
-              </div>
-            )}
+        <div className={`h-full ${activeTab === 'chat' ? 'block' : 'hidden'}`}>
+          <div className="max-w-6xl mx-auto h-full p-4 sm:p-8">
+            <Chat githubUsername={githubUsername} />
+          </div>
+        </div>
 
-            {activeTab === 'notifications' && (
-              <div className="h-full overflow-y-auto p-4 sm:p-8">
-                <Notifications githubUsername={githubUsername} />
-              </div>
-            )}
-          </motion.div>
-        </AnimatePresence>
+        <div className={`h-full ${activeTab === 'settings' ? 'block' : 'hidden'}`}>
+          <div className="h-full overflow-y-auto p-4 sm:p-8">
+            <SettingsComponent githubUsername={githubUsername} />
+          </div>
+        </div>
+
+        <div className={`h-full ${activeTab === 'notifications' ? 'block' : 'hidden'}`}>
+          <div className="h-full overflow-y-auto p-4 sm:p-8">
+            <Notifications githubUsername={githubUsername} />
+          </div>
+        </div>
       </main>
 
       {showCheckin && (
@@ -504,6 +516,12 @@ function DashboardContent({ githubUsername }: DashboardProps) {
             checkOnboardingStatus()
           }}
           suggestions={suggestions}
+        />
+      )}
+
+      {showTwoMinuteTimer && (
+        <TwoMinuteTimer
+          onClose={() => setShowTwoMinuteTimer(false)}
         />
       )}
     </GradientLayout>

@@ -1,20 +1,73 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from typing import List, Dict
 from datetime import datetime
 import models
-from database import get_user_db, get_system_db
+from database import get_user_db, get_system_db, get_user_db_engine
+from sqlalchemy.orm import sessionmaker
 from services import sage_crew
 from cache import cached
+from crud.crud_goal import goal as crud_goal
 
 router = APIRouter()
+
+async def process_goal_analysis(
+    goal_id: int,
+    goal_data: dict,
+    user_context: dict,
+    user_db_url: str
+):
+    """Background task to analyze goal and update DB"""
+    print(f"🧠 [Background] Starting AI analysis for goal {goal_id}...")
+    
+    # Create a new session for the background task
+    engine = get_user_db_engine(user_db_url)
+    async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    
+    async with async_session() as db:
+        try:
+            # Fetch goal again
+            result = await db.execute(select(models.Goal).filter(models.Goal.id == goal_id))
+            goal = result.scalars().first()
+            
+            if not goal:
+                print(f"❌ [Background] Goal {goal_id} not found")
+                return
+
+            analysis = await sage_crew.analyze_goal(goal_data, user_context, db)
+            
+            goal.ai_analysis = analysis["analysis"]
+            goal.ai_insights = {
+                "insights": analysis["insights"], 
+                "obstacles": analysis["obstacles"], 
+                "recommendations": analysis["recommendations"], 
+                "feasibility_score": analysis["feasibility_score"], 
+                "estimated_duration": analysis["estimated_duration"]
+            }
+            goal.obstacles_identified = {"obstacles": analysis["obstacles"]}
+            
+            for sg in analysis["suggested_subgoals"]:
+                db.add(models.SubGoal(goal_id=goal.id, title=sg["title"], order=sg["order"]))
+            
+            from sqlalchemy.orm.attributes import flag_modified
+            flag_modified(goal, "ai_insights")
+            flag_modified(goal, "obstacles_identified")
+            
+            await db.commit()
+            print(f"✅ [Background] AI analysis completed for goal {goal_id}")
+            
+        except Exception as e:
+            print(f"❌ [Background] Goal analysis failed: {str(e)}")
+        finally:
+            await engine.dispose()
 
 @router.post("/goals/{github_username}", response_model=models.GoalResponse)
 async def create_goal(
     github_username: str,
     goal: models.GoalCreate,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_user_db),
     system_db: AsyncSession = Depends(get_system_db)
 ):
@@ -53,30 +106,44 @@ async def create_goal(
     await db.commit()
     await db.refresh(new_goal)
     
-    try:
-        # Assuming sage_crew.analyze_goal will be updated to async
-        analysis = await sage_crew.analyze_goal(
-            {"title": goal.title, "description": goal.description, "goal_type": goal.goal_type, "priority": goal.priority, "target_date": goal.target_date.isoformat() if goal.target_date else None, "success_criteria": goal.success_criteria},
-            user_context, db
-        )
-        new_goal.ai_analysis = analysis["analysis"]
-        new_goal.ai_insights = {"insights": analysis["insights"], "obstacles": analysis["obstacles"], "recommendations": analysis["recommendations"], "feasibility_score": analysis["feasibility_score"], "estimated_duration": analysis["estimated_duration"]}
-        new_goal.obstacles_identified = {"obstacles": analysis["obstacles"]}
-        for sg in analysis["suggested_subgoals"]:
-            db.add(models.SubGoal(goal_id=new_goal.id, title=sg["title"], order=sg["order"]))
-        if goal.milestones:
-            for ms in goal.milestones:
-                db.add(models.Milestone(goal_id=new_goal.id, title=ms.title, description=ms.description, target_date=ms.target_date))
-        
-        from sqlalchemy.orm.attributes import flag_modified
-        flag_modified(new_goal, "ai_insights")
-        flag_modified(new_goal, "obstacles_identified")
+    # Schedule background analysis
+    goal_data = {
+        "title": goal.title, 
+        "description": goal.description, 
+        "goal_type": goal.goal_type, 
+        "priority": goal.priority, 
+        "target_date": goal.target_date.isoformat() if goal.target_date else None, 
+        "success_criteria": goal.success_criteria
+    }
+    
+    background_tasks.add_task(
+        process_goal_analysis, 
+        new_goal.id, 
+        goal_data, 
+        user_context, 
+        user.neon_db_url
+    )
+    
+    # Manually create milestones if provided (sync part)
+    if goal.milestones:
+        for ms in goal.milestones:
+            db.add(models.Milestone(goal_id=new_goal.id, title=ms.title, description=ms.description, target_date=ms.target_date))
         await db.commit()
-        await db.refresh(new_goal)
-    except Exception as e:
-        print(f"❌ Goal analysis failed: {str(e)}")
+
+    # Re-fetch with eager loading to avoid MissingGreenlet error during serialization
+    # This handles both the initial creation and any updates from the AI analysis
+    result = await db.execute(
+        select(models.Goal)
+        .options(selectinload(models.Goal.subgoals), selectinload(models.Goal.milestones))
+        .filter(models.Goal.id == new_goal.id)
+    )
+    new_goal = result.scalars().first()
     
     return new_goal
+
+from crud.crud_goal import goal as crud_goal
+
+# ... imports
 
 @router.get("/goals/{github_username}", response_model=List[models.GoalResponse])
 async def get_goals(
@@ -91,15 +158,8 @@ async def get_goals(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     
-    query = select(models.Goal).filter(models.Goal.user_id == user.id)
-    if status:
-        query = query.filter(models.Goal.status == status)
-    if goal_type:
-        query = query.filter(models.Goal.goal_type == goal_type)
-    
-    query = query.options(selectinload(models.Goal.subgoals).selectinload(models.SubGoal.tasks), selectinload(models.Goal.milestones))
-    result = await db.execute(query.order_by(models.Goal.created_at.desc()))
-    return result.scalars().all()
+    goals = await crud_goal.get_multi_by_user(db, user_id=user.id, status=status, goal_type=goal_type)
+    return goals
 
 @cached(ttl=60)
 @router.get("/goals/{github_username}/dashboard", response_model=models.GoalsDashboardResponse)
@@ -156,9 +216,8 @@ async def get_goal_detail(github_username: str, goal_id: int, db: AsyncSession =
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     
-    result = await db.execute(select(models.Goal).options(selectinload(models.Goal.subgoals).selectinload(models.SubGoal.tasks), selectinload(models.Goal.milestones)).filter(models.Goal.id == goal_id, models.Goal.user_id == user.id))
-    goal = result.scalars().first()
-    if not goal:
+    goal = await crud_goal.get(db, id=goal_id)
+    if not goal or goal.user_id != user.id:
         raise HTTPException(status_code=404, detail="Goal not found")
     return goal
 
@@ -326,8 +385,12 @@ async def get_weekly_review(github_username: str, db: AsyncSession = Depends(get
     await db.refresh(task)
     return {"message": "Task updated successfully", "task": task}
 
-@router.delete("/goals/{github_username}/{goal_id}")
-async def delete_goal(github_username: str, goal_id: int, db: AsyncSession = Depends(get_user_db), system_db: AsyncSession = Depends(get_system_db)):
+    await db.delete(goal)
+    await db.commit()
+    return {"message": "Goal deleted successfully"}
+
+@router.post("/goals/{github_username}/{goal_id}/milestones", response_model=models.MilestoneResponse)
+async def create_milestone(github_username: str, goal_id: int, milestone: models.MilestoneCreate, db: AsyncSession = Depends(get_user_db), system_db: AsyncSession = Depends(get_system_db)):
     result = await system_db.execute(select(models.User).filter(models.User.github_username == github_username))
     user = result.scalars().first()
     if not user:
@@ -338,9 +401,11 @@ async def delete_goal(github_username: str, goal_id: int, db: AsyncSession = Dep
     if not goal:
         raise HTTPException(status_code=404, detail="Goal not found")
     
-    await db.delete(goal)
+    new_milestone = models.Milestone(goal_id=goal.id, title=milestone.title, description=milestone.description, target_date=milestone.target_date)
+    db.add(new_milestone)
     await db.commit()
-    return {"message": "Goal deleted successfully"}
+    await db.refresh(new_milestone)
+    return new_milestone
 
 @router.put("/goals/{github_username}/{goal_id}/milestones/{milestone_id}")
 async def update_milestone(github_username: str, goal_id: int, milestone_id: int, update: models.MilestoneCreate, db: AsyncSession = Depends(get_user_db), system_db: AsyncSession = Depends(get_system_db)):

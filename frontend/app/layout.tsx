@@ -2,8 +2,8 @@ import type { Metadata } from 'next'
 import { ClerkProvider } from '@clerk/nextjs'
 import { dark } from '@clerk/themes'
 import './globals.css'
-import { ToastProvider } from '@/components/ErrorBoundary'
-import GlobalErrorBoundary from '@/components/GlobalErrorBoundary'
+import { ToastProvider } from '@/components/shared/ErrorBoundary'
+import GlobalErrorBoundary from '@/components/shared/GlobalErrorBoundary'
 import Providers from './providers'
 
 export const metadata: Metadata = {

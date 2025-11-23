@@ -113,7 +113,32 @@ class EmailService:
                 {goals_html if goals_html else "<li>Keep pushing! Set some goals for next week.</li>"}
             </ul>
             
+            <h3>💡 Sage's Insights</h3>
+            <div style="background-color: #f9f9f9; padding: 15px; border-left: 4px solid #933DC9; font-style: italic;">
+                {report.get('review_text', 'Keep up the consistency!')}
+            </div>
+            
             <p>Ready for next week? <a href="http://localhost:3000/dashboard" style="color: #933DC9;">Plan your week now</a>.</p>
+        </div>
+        """
+        return await self.send_email(user_email, subject, html)
+
+    async def send_nudge_email(self, user_email: str, username: str, days_inactive: int):
+        subject = f"We miss you, {username}! 👋"
+        
+        html = f"""
+        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #933DC9;">Hey {username},</h2>
+            <p>We noticed you haven't checked in for <strong>{days_inactive} days</strong>.</p>
+            
+            <p>Consistency is the key to mastery. It's not about being perfect, it's about showing up.</p>
+            
+            <div style="margin: 30px 0; text-align: center;">
+                <a href="http://localhost:3000/dashboard" style="background-color: #933DC9; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold;">Resume Your Streak</a>
+            </div>
+            
+            <p><em>"The only bad workout is the one that didn't happen."</em></p>
+            <p>- The Sage Team</p>
         </div>
         """
         return await self.send_email(user_email, subject, html)
