@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 import models
 from models import NotificationResponse, NotificationStats
 from database import get_user_db, get_system_db
-from notification_service import NotificationService
+from services.notification_service import NotificationService
 
 router = APIRouter()
 

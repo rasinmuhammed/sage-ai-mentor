@@ -1,5 +1,5 @@
 from crewai import Task, Crew, Process
-from agents import create_agents, get_agents
+from .agents import create_agents, get_agents
 from typing import Dict, List
 import json
 import models
@@ -10,7 +10,7 @@ import asyncio
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from agents import create_agents, get_agents
+from .agents import create_agents, get_agents
 
 class SageMentorCrew:
     def __init__(self, api_key: str = None):
@@ -115,7 +115,7 @@ class SageMentorCrew:
             agents=[self.analyst, self.psychologist, self.strategist],
             tasks=[analysis_task, psychology_task, strategy_task],
             process=Process.sequential,
-            verbose=True
+            verbose=False
         )
         
         result = await asyncio.to_thread(crew.kickoff)
@@ -277,7 +277,7 @@ class SageMentorCrew:
             agents=[self.analyst, self.psychologist, self.contrarian, self.strategist],
             tasks=tasks,
             process=Process.sequential,
-            verbose=True,
+            verbose=False,
             step_callback=step_callback
         )
         
@@ -339,7 +339,7 @@ class SageMentorCrew:
             agents=[self.analyst, self.psychologist, self.contrarian, self.strategist],
             tasks=tasks,
             process=Process.sequential,
-            verbose=True
+            verbose=False
         )
         
         # Capture output - note: _capture_output is synchronous because it messes with sys.stdout
@@ -675,6 +675,84 @@ class SageMentorCrew:
             print(f"Error extracting plan proposal: {e}")
             return None
     
+    async def generate_goal_plan(self, title: str, user_context: Dict, api_key: str = None) -> Dict:
+        """Generate a detailed goal plan from a simple title"""
+        self._ensure_agents(api_key)
+        
+        strategist_task = Task(
+            description=f"""Create a detailed SMART goal plan for: "{title}"
+            
+            User Context:
+            - GitHub: {user_context.get('github_stats', {})}
+            - Recent Performance: {user_context.get('recent_performance', {})}
+            
+            Your job is to flesh out this goal into a concrete plan.
+            
+            Output MUST be a valid JSON object with this exact structure:
+            {{
+                "description": "A compelling, specific description of what success looks like.",
+                "milestones": [
+                    {{
+                        "title": "Milestone 1 Title",
+                        "description": "What to achieve",
+                        "target_date": "YYYY-MM-DD" (calculate based on realistic timeline from today {datetime.now().strftime('%Y-%m-%d')})
+                    }}
+                ],
+                "success_criteria": [
+                    "Criterion 1",
+                    "Criterion 2"
+                ],
+                "goal_type": "career" (or personal, financial, health, learning, project),
+                "priority": "high" (or medium, critical)
+            }}
+            
+            Do not include any markdown formatting or explanations outside the JSON.
+            """,
+            agent=self.strategist,
+            expected_output="JSON object with goal details"
+        )
+        
+        crew = Crew(
+            agents=[self.strategist],
+            tasks=[strategist_task],
+            process=Process.sequential,
+            verbose=False
+        )
+        
+        result = await asyncio.to_thread(crew.kickoff)
+        
+        # Parse JSON from result
+        try:
+            result_str = str(result)
+            # Clean up markdown code blocks if present
+            if "```json" in result_str:
+                result_str = result_str.split("```json")[1].split("```")[0].strip()
+            elif "```" in result_str:
+                result_str = result_str.split("```")[1].split("```")[0].strip()
+            
+            # Remove any leading/trailing text that isn't part of the JSON object
+            result_str = result_str.strip()
+            if not result_str.startswith('{'):
+                start_idx = result_str.find('{')
+                if start_idx != -1:
+                    result_str = result_str[start_idx:]
+            if not result_str.endswith('}'):
+                end_idx = result_str.rfind('}')
+                if end_idx != -1:
+                    result_str = result_str[:end_idx+1]
+
+            return json.loads(result_str)
+        except Exception as e:
+            print(f"Error parsing generated goal plan: {e}")
+            # Fallback
+            return {
+                "description": f"Plan for {title}",
+                "milestones": [],
+                "success_criteria": ["Complete the goal"],
+                "goal_type": "personal",
+                "priority": "medium"
+            }
+
     async def analyze_goal(self, goal_data: Dict, user_context: Dict, db, api_key: str = None) -> Dict:
         """Comprehensive AI analysis of a life goal"""
         self._ensure_agents(api_key)
@@ -773,7 +851,7 @@ class SageMentorCrew:
             agents=[self.analyst, self.psychologist, self.contrarian, self.strategist],
             tasks=[analyst_task, psychologist_task, contrarian_task, strategist_task],
             process=Process.sequential,
-            verbose=True
+            verbose=False
         )
         
         result = await asyncio.to_thread(crew.kickoff)

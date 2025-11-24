@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
-import { X, Loader2, Plus, Trash2, Calendar, Flag } from 'lucide-react'
+import { X, Loader2, Plus, Trash2, Calendar, Flag, Sparkles } from 'lucide-react'
 import FirstTimeTooltip from '../onboarding/FirstTimeTooltip'
 import { Button } from '../../ui/Button'
 import { Input } from '../../ui/Input'
@@ -31,6 +31,7 @@ export default function CreateGoalModal({ githubUsername, onClose, onComplete, i
   const [successCriteria, setSuccessCriteria] = useState<string[]>([''])
   const [milestones, setMilestones] = useState<MilestoneData[]>([])
   const [submitting, setSubmitting] = useState(false)
+  const [generating, setGenerating] = useState(false)
 
   useEffect(() => {
     if (initialData) {
@@ -91,6 +92,50 @@ export default function CreateGoalModal({ githubUsername, onClose, onComplete, i
     setMilestones(updated)
   }
 
+  const handleAIGenerate = async () => {
+    if (!title) return
+    setGenerating(true)
+    try {
+      const groqKey = localStorage.getItem('groq_api_key')
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json'
+      }
+      if (groqKey) {
+        headers['X-Groq-Key'] = groqKey
+      }
+
+      const response = await axios.post(
+        `${API_URL}/goals/generate?github_username=${githubUsername}`,
+        { title },
+        { headers }
+      )
+
+      const plan = response.data
+      setDescription(plan.description || '')
+      setGoalType(plan.goal_type || 'career')
+      setPriority(plan.priority || 'high')
+
+      if (plan.milestones) {
+        setMilestones(plan.milestones.map((m: any) => ({
+          title: m.title,
+          description: m.description,
+          target_date: m.target_date,
+          status: 'new'
+        })))
+      }
+
+      if (plan.success_criteria) {
+        setSuccessCriteria(plan.success_criteria)
+      }
+
+    } catch (error) {
+      console.error('Failed to generate goal plan:', error)
+      alert('Failed to generate plan. Please try again.')
+    } finally {
+      setGenerating(false)
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setSubmitting(true)
@@ -105,9 +150,17 @@ export default function CreateGoalModal({ githubUsername, onClose, onComplete, i
         success_criteria: successCriteria.filter(c => c.trim())
       }
 
+      const groqKey = localStorage.getItem('groq_api_key')
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json'
+      }
+      if (groqKey) {
+        headers['X-Groq-Key'] = groqKey
+      }
+
       if (initialData) {
         // Update Goal
-        await axios.patch(`${API_URL}/goals/${githubUsername}/${initialData.id}`, payload)
+        await axios.patch(`${API_URL}/goals/${githubUsername}/${initialData.id}`, payload, { headers })
 
         // Handle Milestones
         for (const m of milestones) {
@@ -138,7 +191,7 @@ export default function CreateGoalModal({ githubUsername, onClose, onComplete, i
             target_date: m.target_date
           }))
         }
-        await axios.post(`${API_URL}/goals/${githubUsername}`, createPayload)
+        await axios.post(`${API_URL}/goals/${githubUsername}`, createPayload, { headers })
 
         // Track onboarding progress only for new goals
         if (typeof window !== 'undefined') {
@@ -150,6 +203,7 @@ export default function CreateGoalModal({ githubUsername, onClose, onComplete, i
       // Show success message
       alert('Goal created! The AI Council is now deliberating on your strategy...')
       onComplete()
+
     } catch (error) {
       console.error('Failed to save goal:', error)
       alert('Failed to save goal')
@@ -176,13 +230,27 @@ export default function CreateGoalModal({ githubUsername, onClose, onComplete, i
             <label className="block text-sm font-medium text-[#FBFAEE]/80 mb-1.5">
               Goal Title <span className="text-red-400">*</span>
             </label>
-            <div className="relative">
-              <Input
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="e.g., Become a Senior Developer"
-                required
-              />
+            <div className="relative flex gap-2">
+              <div className="flex-1">
+                <Input
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="e.g., Become a Senior Developer"
+                  required
+                />
+              </div>
+              {!initialData && (
+                <Button
+                  type="button"
+                  onClick={handleAIGenerate}
+                  disabled={!title || generating}
+                  isLoading={generating}
+                  className="bg-gradient-to-r from-[#933DC9] to-[#53118F] text-white shadow-lg shadow-purple-900/20 whitespace-nowrap"
+                  leftIcon={<Sparkles className="w-4 h-4" />}
+                >
+                  AI Assist
+                </Button>
+              )}
               {!initialData && (
                 <FirstTimeTooltip
                   id="first_goal_title"

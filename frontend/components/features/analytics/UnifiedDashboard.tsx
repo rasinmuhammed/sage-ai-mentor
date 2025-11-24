@@ -58,13 +58,19 @@ export default function UnifiedDashboard({ githubUsername, onNavigate, onReviewC
             </div>
 
             {/* 2. Context & Identity (Secondary) */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 opacity-80 hover:opacity-100 transition-opacity duration-500">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
 
                 {/* Identity / Stats */}
-                <div className="glass-card p-6 rounded-2xl border border-white/5 flex flex-col justify-between group hover:border-blue-500/30 transition-all">
+                <motion.div
+                    whileHover={{ y: -5, scale: 1.02 }}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.4, delay: 0.1 }}
+                    className="glass-card p-6 rounded-2xl border border-white/5 flex flex-col justify-between group hover:border-blue-500/30 transition-all cursor-default shadow-lg hover:shadow-blue-500/10"
+                >
                     <div>
                         <div className="flex items-center justify-between mb-4">
-                            <div className="bg-blue-500/10 p-2 rounded-lg">
+                            <div className="bg-blue-500/10 p-2 rounded-lg group-hover:bg-blue-500/20 transition-colors">
                                 <Trophy className="w-5 h-5 text-blue-400" />
                             </div>
                             <span className="text-xs font-medium text-blue-400 bg-blue-500/5 px-2 py-1 rounded-full border border-blue-500/10">
@@ -80,22 +86,29 @@ export default function UnifiedDashboard({ githubUsername, onNavigate, onReviewC
                             <span>XP Progress</span>
                             <span>{dashboardData?.user?.total_xp || 0} XP</span>
                         </div>
-                        <div className="w-full bg-black/30 rounded-full h-1">
-                            <div
-                                className="bg-blue-500 h-1 rounded-full transition-all"
-                                style={{ width: `${((dashboardData?.user?.total_xp || 0) % 1000) / 10}%` }}
+                        <div className="w-full bg-black/30 rounded-full h-1 overflow-hidden">
+                            <motion.div
+                                className="bg-blue-500 h-1 rounded-full"
+                                initial={{ width: 0 }}
+                                animate={{ width: `${((dashboardData?.user?.total_xp || 0) % 1000) / 10}%` }}
+                                transition={{ duration: 1, delay: 0.5 }}
                             />
                         </div>
                     </div>
-                </div>
+                </motion.div>
 
                 {/* Current Plan */}
-                <div
+                <motion.div
                     onClick={() => onNavigate('learning')}
-                    className="glass-card p-6 rounded-2xl border border-white/5 cursor-pointer group hover:border-[#933DC9]/30 transition-all"
+                    whileHover={{ y: -5, scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.4, delay: 0.2 }}
+                    className="glass-card p-6 rounded-2xl border border-white/5 cursor-pointer group hover:border-[#933DC9]/30 transition-all shadow-lg hover:shadow-[#933DC9]/10"
                 >
                     <div className="flex items-center justify-between mb-4">
-                        <div className="bg-[#933DC9]/10 p-2 rounded-lg">
+                        <div className="bg-[#933DC9]/10 p-2 rounded-lg group-hover:bg-[#933DC9]/20 transition-colors">
                             <Brain className="w-5 h-5 text-[#C488F8]" />
                         </div>
                         <ArrowRight className="w-4 h-4 text-[#FBFAEE]/20 group-hover:text-[#FBFAEE] group-hover:translate-x-1 transition-all" />
@@ -114,12 +127,18 @@ export default function UnifiedDashboard({ githubUsername, onNavigate, onReviewC
                             <span>{dailyTasks.filter((t: any) => t.status === 'completed').length}/{dailyTasks.length} tasks done</span>
                         </div>
                     )}
-                </div>
+                </motion.div>
 
                 {/* Streak / Consistency */}
-                <div className="glass-card p-6 rounded-2xl border border-white/5 group hover:border-orange-500/30 transition-all">
+                <motion.div
+                    whileHover={{ y: -5, scale: 1.02 }}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.4, delay: 0.3 }}
+                    className="glass-card p-6 rounded-2xl border border-white/5 group hover:border-orange-500/30 transition-all cursor-default shadow-lg hover:shadow-orange-500/10"
+                >
                     <div className="flex items-center justify-between mb-4">
-                        <div className="bg-orange-500/10 p-2 rounded-lg">
+                        <div className="bg-orange-500/10 p-2 rounded-lg group-hover:bg-orange-500/20 transition-colors">
                             <Flame className="w-5 h-5 text-orange-500" />
                         </div>
                         <span className="text-xs font-medium text-orange-400 bg-orange-500/5 px-2 py-1 rounded-full border border-orange-500/10">
@@ -135,7 +154,7 @@ export default function UnifiedDashboard({ githubUsername, onNavigate, onReviewC
                     <div className="mt-6 text-xs text-[#FBFAEE]/40">
                         Best: {dashboardData?.user?.best_streak || 0} days
                     </div>
-                </div>
+                </motion.div>
 
             </div>
         </div>

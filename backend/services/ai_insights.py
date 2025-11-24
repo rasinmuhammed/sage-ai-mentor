@@ -3,7 +3,7 @@ from typing import List, Dict
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 import models
-from crew import SageMentorCrew
+from .crew import SageMentorCrew
 
 class ProactiveInsightsEngine:
     """Generate proactive insights based on user behavior"""

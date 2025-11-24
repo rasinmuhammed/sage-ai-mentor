@@ -1,15 +1,18 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Header
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
-from typing import List, Dict
+from typing import List, Dict, Optional
 from datetime import datetime
 import models
 from database import get_user_db, get_system_db, get_user_db_engine
 from sqlalchemy.orm import sessionmaker
 from services import sage_crew
-from cache import cached
+from services.cache import cached
 from crud.crud_goal import goal as crud_goal
+import sys
+import traceback
 
 router = APIRouter()
 
@@ -17,10 +20,12 @@ async def process_goal_analysis(
     goal_id: int,
     goal_data: dict,
     user_context: dict,
-    user_db_url: str
+    user_db_url: str,
+    api_key: str = None
 ):
     """Background task to analyze goal and update DB"""
-    print(f"🧠 [Background] Starting AI analysis for goal {goal_id}...")
+    sys.stdout.write(f"🧠 [Background] Starting AI analysis for goal {goal_id}...\n")
+    sys.stdout.flush()
     
     # Create a new session for the background task
     engine = get_user_db_engine(user_db_url)
@@ -33,10 +38,11 @@ async def process_goal_analysis(
             goal = result.scalars().first()
             
             if not goal:
-                print(f"❌ [Background] Goal {goal_id} not found")
+                sys.stdout.write(f"❌ [Background] Goal {goal_id} not found\n")
+                sys.stdout.flush()
                 return
 
-            analysis = await sage_crew.analyze_goal(goal_data, user_context, db)
+            analysis = await sage_crew.analyze_goal(goal_data, user_context, db, api_key)
             
             goal.ai_analysis = analysis["analysis"]
             goal.ai_insights = {
@@ -56,12 +62,70 @@ async def process_goal_analysis(
             flag_modified(goal, "obstacles_identified")
             
             await db.commit()
-            print(f"✅ [Background] AI analysis completed for goal {goal_id}")
+            await db.commit()
+            sys.stdout.write(f"✅ [Background] AI analysis completed for goal {goal_id}\n")
+            sys.stdout.flush()
             
         except Exception as e:
-            print(f"❌ [Background] Goal analysis failed: {str(e)}")
+            sys.stdout.write(f"❌ [Background] Goal analysis failed: {str(e)}\n")
+            traceback.print_exc(file=sys.stdout)
+            sys.stdout.flush()
+            # Update goal with error state to stop spinner
+            try:
+                goal.ai_analysis = "Analysis failed. Please try updating the goal later."
+                goal.ai_insights = {
+                    "insights": ["AI analysis unavailable at the moment."], 
+                    "obstacles": [], 
+                    "recommendations": [], 
+                    "feasibility_score": 0, 
+                    "estimated_duration": "Unknown"
+                }
+                from sqlalchemy.orm.attributes import flag_modified
+                flag_modified(goal, "ai_insights")
+                await db.commit()
+            except Exception as inner_e:
+                sys.stdout.write(f"❌ [Background] Failed to save error state: {str(inner_e)}\n")
+                sys.stdout.flush()
         finally:
             await engine.dispose()
+
+class GoalGenerationRequest(BaseModel):
+    title: str
+
+@router.post("/goals/generate")
+async def generate_goal(
+    request: GoalGenerationRequest,
+    github_username: Optional[str] = None,
+    db: AsyncSession = Depends(get_user_db),
+    system_db: AsyncSession = Depends(get_system_db),
+    x_groq_key: Optional[str] = Header(None, alias="X-Groq-Key")
+):
+    user_context = {}
+    if github_username:
+        result = await system_db.execute(select(models.User).filter(models.User.github_username == github_username))
+        user = result.scalars().first()
+        if user:
+            # Fetch context similar to create_goal
+            result = await db.execute(select(models.GitHubAnalysis).filter(models.GitHubAnalysis.user_id == user.id).order_by(models.GitHubAnalysis.analyzed_at.desc()))
+            github_analysis = result.scalars().first()
+            
+            result = await db.execute(select(models.CheckIn).filter(models.CheckIn.user_id == user.id, models.CheckIn.shipped != None).order_by(models.CheckIn.timestamp.desc()).limit(30))
+            recent_checkins = result.scalars().all()
+            
+            user_context = {
+                "github_stats": {
+                    "total_repos": github_analysis.total_repos if github_analysis else 0,
+                    "active_repos": github_analysis.active_repos if github_analysis else 0,
+                    "languages": github_analysis.languages if github_analysis else {}
+                },
+                "recent_performance": {
+                    "success_rate": (sum(1 for c in recent_checkins if c.shipped) / len(recent_checkins) * 100) if recent_checkins else 0,
+                    "avg_energy": sum(c.energy_level for c in recent_checkins) / len(recent_checkins) if recent_checkins else 0
+                }
+            }
+
+    plan = await sage_crew.generate_goal_plan(request.title, user_context, api_key=x_groq_key)
+    return plan
 
 @router.post("/goals/{github_username}", response_model=models.GoalResponse)
 async def create_goal(
@@ -69,7 +133,8 @@ async def create_goal(
     goal: models.GoalCreate,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_user_db),
-    system_db: AsyncSession = Depends(get_system_db)
+    system_db: AsyncSession = Depends(get_system_db),
+    x_groq_key: Optional[str] = Header(None, alias="X-Groq-Key")
 ):
     result = await system_db.execute(select(models.User).filter(models.User.github_username == github_username))
     user = result.scalars().first()
@@ -121,7 +186,8 @@ async def create_goal(
         new_goal.id, 
         goal_data, 
         user_context, 
-        user.neon_db_url
+        user.neon_db_url,
+        x_groq_key
     )
     
     # Manually create milestones if provided (sync part)
@@ -376,15 +442,18 @@ async def get_weekly_review(github_username: str, db: AsyncSession = Depends(get
         print(f"❌ Weekly review failed: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to generate review")
 
-    task.status = status
-    if status == 'completed' and not task.completed_at:
-        task.completed_at = datetime.utcnow()
-    elif status != 'completed':
-        task.completed_at = None
-    await db.commit()
-    await db.refresh(task)
-    return {"message": "Task updated successfully", "task": task}
-
+@router.delete("/goals/{github_username}/{goal_id}")
+async def delete_goal(github_username: str, goal_id: int, db: AsyncSession = Depends(get_user_db), system_db: AsyncSession = Depends(get_system_db)):
+    result = await system_db.execute(select(models.User).filter(models.User.github_username == github_username))
+    user = result.scalars().first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    result = await db.execute(select(models.Goal).filter(models.Goal.id == goal_id, models.Goal.user_id == user.id))
+    goal = result.scalars().first()
+    if not goal:
+        raise HTTPException(status_code=404, detail="Goal not found")
+    
     await db.delete(goal)
     await db.commit()
     return {"message": "Goal deleted successfully"}

@@ -88,8 +88,18 @@ export default function LifeDecisions({ githubUsername }: LifeDecisionsProps) {
     setReanalyzing(true)
     setReanalyzeError('')
     try {
+      const groqKey = localStorage.getItem('groq_api_key')
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json'
+      }
+      if (groqKey) {
+        headers['X-Groq-Key'] = groqKey
+      }
+
       const response = await axios.post(
-        `${API_URL}/life-decisions/${githubUsername}/${decisionId}/reanalyze`
+        `${API_URL}/life-decisions/${githubUsername}/${decisionId}/reanalyze`,
+        {},
+        { headers }
       )
       if (selectedDecision && selectedDecision.id === decisionId) {
         setSelectedDecision({
@@ -136,10 +146,18 @@ export default function LifeDecisions({ githubUsername }: LifeDecisionsProps) {
         time_horizon: timeHorizon
       }
 
+      const groqKey = localStorage.getItem('groq_api_key')
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json'
+      }
+      if (groqKey) {
+        headers['X-Groq-Key'] = groqKey
+      }
+
       if (editingDecision) {
-        await axios.put(`${API_URL}/life-decisions/${githubUsername}/${editingDecision.id}`, payload)
+        await axios.put(`${API_URL}/life-decisions/${githubUsername}/${editingDecision.id}`, payload, { headers })
       } else {
-        await axios.post(`${API_URL}/life-decisions/${githubUsername}`, payload)
+        await axios.post(`${API_URL}/life-decisions/${githubUsername}`, payload, { headers })
       }
 
       await fetchDecisions(true)

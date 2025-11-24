@@ -9,7 +9,7 @@ import models
 from models import LifeDecisionResponse, LifeDecisionCreate, ChatMessage, AgentAdviceResponse
 from database import get_user_db, get_system_db
 from services import sage_crew
-from ai_insights import ProactiveInsightsEngine
+from services.ai_insights import ProactiveInsightsEngine
 
 router = APIRouter()
 
@@ -56,6 +56,14 @@ async def chat_with_mentor(
     system_db: AsyncSession = Depends(get_system_db),
     x_groq_key: Optional[str] = Header(None, alias="X-Groq-Key")
 ):
+    # Validate API Key format
+    if x_groq_key:
+        if not x_groq_key.startswith("gsk_"):
+            print(f"⚠️ WARNING: Received potentially invalid Groq API Key (starts with {x_groq_key[:4]}...). Ignoring header key and falling back to environment variable.")
+            x_groq_key = None
+        else:
+            print(f"✓ Received valid Groq API Key format")
+
     result = await system_db.execute(select(models.User).filter(models.User.github_username == github_username))
     user = result.scalars().first()
     if not user:
@@ -143,6 +151,14 @@ async def create_life_decision(
     system_db: AsyncSession = Depends(get_system_db),
     x_groq_key: Optional[str] = Header(None, alias="X-Groq-Key")
 ):
+    # Validate API Key format
+    if x_groq_key:
+        if not x_groq_key.startswith("gsk_"):
+            print(f"⚠️ WARNING: Received potentially invalid Groq API Key (starts with {x_groq_key[:4]}...). Ignoring header key and falling back to environment variable.")
+            x_groq_key = None
+        else:
+            print(f"✓ Received valid Groq API Key format")
+
     result = await system_db.execute(select(models.User).filter(models.User.github_username == github_username))
     user = result.scalars().first()
     if not user:
@@ -223,6 +239,14 @@ async def reanalyze_life_decision(
     system_db: AsyncSession = Depends(get_system_db),
     x_groq_key: Optional[str] = Header(None, alias="X-Groq-Key")
 ):
+    # Validate API Key format
+    if x_groq_key:
+        if not x_groq_key.startswith("gsk_"):
+            print(f"⚠️ WARNING: Received potentially invalid Groq API Key (starts with {x_groq_key[:4]}...). Ignoring header key and falling back to environment variable.")
+            x_groq_key = None
+        else:
+            print(f"✓ Received valid Groq API Key format")
+    
     result = await system_db.execute(select(models.User).filter(models.User.github_username == github_username))
     user = result.scalars().first()
     if not user:
@@ -348,6 +372,14 @@ async def evaluate_decision(
     system_db: AsyncSession = Depends(get_system_db),
     x_groq_key: Optional[str] = Header(None, alias="X-Groq-Key")
 ):
+    # Validate API Key format
+    if x_groq_key:
+        if not x_groq_key.startswith("gsk_"):
+            print(f"⚠️ WARNING: Received potentially invalid Groq API Key (starts with {x_groq_key[:4]}...). Ignoring header key and falling back to environment variable.")
+            x_groq_key = None
+        else:
+            print(f"✓ Received valid Groq API Key format")
+
     result = await db.execute(select(models.LifeEvent).filter(models.LifeEvent.id == decision_id))
     event = result.scalars().first()
     if not event:

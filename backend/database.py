@@ -10,18 +10,24 @@ load_dotenv()
 
 # --- Configuration Helpers ---
 def fix_db_url(url: str) -> str:
-    """Ensure URL is compatible with SQLAlchemy Async (postgres -> postgresql+asyncpg)"""
+    """Ensure URL is compatible with SQLAlchemy Async"""
     if url:
         # Replace postgres:// or postgresql:// with postgresql+asyncpg://
         if url.startswith("postgres://"):
             return url.replace("postgres://", "postgresql+asyncpg://", 1)
         elif url.startswith("postgresql://"):
             return url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        elif url.startswith("sqlite://") and not url.startswith("sqlite+aiosqlite://"):
+            return url.replace("sqlite://", "sqlite+aiosqlite://", 1)
     return url
 
 # --- System Database (Internal) ---
 # For SQLite, we use aiosqlite driver
-SYSTEM_DATABASE_URL = os.getenv("SYSTEM_DATABASE_URL", "sqlite+aiosqlite:///./sage.db")
+from config import settings
+
+# --- System Database (Internal) ---
+# For SQLite, we use aiosqlite driver
+SYSTEM_DATABASE_URL = fix_db_url(settings.DATABASE_URL)
 
 if not SYSTEM_DATABASE_URL.startswith("sqlite"):
      # Fallback logic if needed, but for now assuming sqlite+aiosqlite

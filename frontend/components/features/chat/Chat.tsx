@@ -47,6 +47,7 @@ export default function Chat({ githubUsername }: ChatProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [historyLoading, setHistoryLoading] = useState(true)
   const [showDebateByDefault, setShowDebateByDefault] = useState(true)
   const [expandedDebateIndex, setExpandedDebateIndex] = useState<number | null>(null)
   const [showRawDeliberation, setShowRawDeliberation] = useState<number | null>(null)
@@ -69,20 +70,69 @@ export default function Chat({ githubUsername }: ChatProps) {
     scrollToBottom()
   }, [messages])
 
+  useEffect(() => {
+    const fetchHistory = async () => {
+      try {
+        setHistoryLoading(true)
+        const response = await axios.get(`${API_URL}/advice/${githubUsername}`)
+        const history = response.data.map((item: any) => {
+          // Parse evidence if string, otherwise use as is
+          const evidence = typeof item.evidence === 'string' ? JSON.parse(item.evidence) : item.evidence
+
+          return [
+            {
+              type: 'user',
+              content: evidence?.user_message || 'User Message',
+              timestamp: new Date(item.created_at)
+            },
+            {
+              type: 'assistant',
+              content: item.advice,
+              insights: evidence?.key_insights || [],
+              actions: evidence?.actions || [],
+              timestamp: new Date(item.created_at) // Approximate timestamp
+            }
+          ]
+        }).flat()
+
+        // Sort by timestamp asc
+        history.sort((a: any, b: any) => a.timestamp.getTime() - b.timestamp.getTime())
+
+        setMessages(history)
+      } catch (error) {
+        console.error('Failed to fetch chat history:', error)
+      } finally {
+        setHistoryLoading(false)
+      }
+    }
+
+    if (githubUsername) {
+      fetchHistory()
+    }
+  }, [githubUsername])
+
   // Updated agentColors using the new palette
   const agentColors: Record<string, string> = {
     'Analyst': 'from-[#933DC9] to-[#53118F]', // Orchid to Violet
+    'Data Analyst': 'from-[#933DC9] to-[#53118F]',
     'Psychologist': 'from-[#53118F] to-[#933DC9]', // Violet to Orchid
+    'Developer Psychologist': 'from-[#53118F] to-[#933DC9]',
     'Contrarian': 'from-red-500 to-orange-500', // Keep contrast for Contrarian
-    'Strategist': 'from-[#933DC9] to-[#53118F]' // Orchid to Violet
+    'Devil\'s Advocate': 'from-red-500 to-orange-500',
+    'Strategist': 'from-[#933DC9] to-[#53118F]', // Orchid to Violet
+    'Strategic Advisor': 'from-[#933DC9] to-[#53118F]'
   }
 
   // Icons remain the same
   const agentIcons: Record<string, React.ReactNode> = {
     'Analyst': <BarChart className="w-5 h-5" />,
+    'Data Analyst': <BarChart className="w-5 h-5" />,
     'Psychologist': <Brain className="w-5 h-5" />,
+    'Developer Psychologist': <Brain className="w-5 h-5" />,
     'Contrarian': <AlertTriangle className="w-5 h-5" />,
-    'Strategist': <Target className="w-5 h-5" />
+    'Devil\'s Advocate': <AlertTriangle className="w-5 h-5" />,
+    'Strategist': <Target className="w-5 h-5" />,
+    'Strategic Advisor': <Target className="w-5 h-5" />
   }
 
   const handleSend = async () => {
@@ -284,7 +334,11 @@ export default function Chat({ githubUsername }: ChatProps) {
 
       {/* Messages Area - Use Black background, Floral White text */}
       <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-[#000000]">
-        {messages.length === 0 ? (
+        {historyLoading ? (
+          <div className="flex items-center justify-center h-full">
+            <Loader2 className="w-8 h-8 animate-spin text-[#933DC9]" />
+          </div>
+        ) : messages.length === 0 ? (
           // Empty state - Use Purple gradient for icon background
           <div className="text-center py-12">
             <div className="bg-gradient-to-br from-[#933DC9] to-[#53118F] p-4 rounded-3xl shadow-lg w-20 h-20 mx-auto mb-6 flex items-center justify-center">
@@ -311,7 +365,7 @@ export default function Chat({ githubUsername }: ChatProps) {
         ) : (
           // Display messages
           messages.map((msg, idx) => (
-            <div key={idx}>
+            <div key={idx} className="animate-in slide-in-from-bottom-2 duration-300">
               {msg.type === 'user' ? (
                 // User message - Use Purple gradient
                 <div className="flex justify-end">
@@ -332,42 +386,61 @@ export default function Chat({ githubUsername }: ChatProps) {
 
                   {/* Raw Deliberation Section */}
                   {msg.raw_deliberation && msg.raw_deliberation.length > 0 && (
-                    <div className="ml-8 mt-4">
+                    <div className="ml-2 sm:ml-8 mt-4">
                       <button
                         onClick={() => setShowRawDeliberation(showRawDeliberation === idx ? null : idx)}
-                        className="flex items-center space-x-2 text-sm font-semibold text-[#FBFAEE]/60 hover:text-[#FBFAEE]/80 transition mb-3 group"
+                        className="flex items-center space-x-2 text-xs sm:text-sm font-medium text-[#FBFAEE]/50 hover:text-[#FBFAEE]/90 transition-all mb-4 group w-full sm:w-auto"
                       >
-                        <div className="p-1.5 rounded-lg bg-[#242424] group-hover:bg-[#333] transition-colors">
-                          <Terminal className="w-4 h-4" />
+                        <div className={`p-1.5 rounded-lg transition-all duration-300 ${showRawDeliberation === idx ? 'bg-[#933DC9] text-white rotate-90' : 'bg-[#242424] group-hover:bg-[#333] text-[#FBFAEE]/60'}`}>
+                          <Terminal className="w-3.5 h-3.5" />
                         </div>
-                        <span>
-                          {showRawDeliberation === idx ? 'Hide Thinking Process' : 'Show Thinking Process'}
+                        <span className="uppercase tracking-wider text-[10px] sm:text-xs">
+                          {showRawDeliberation === idx ? 'Hide Thinking Process' : 'View AI Deliberation'}
                         </span>
-                        <span className="bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded-full text-[10px] uppercase tracking-wider font-medium border border-blue-500/20">
-                          Raw Logs
-                        </span>
+                        <div className="h-px flex-1 bg-gradient-to-r from-white/10 to-transparent ml-2" />
                       </button>
 
                       {showRawDeliberation === idx && (
-                        <div className="space-y-3 animate-in slide-in-from-top duration-300 mb-6">
+                        <div className="relative pl-2 sm:pl-4 space-y-6 mb-8 animate-in slide-in-from-top-4 duration-500 fade-in">
+                          {/* Vertical Connecting Line */}
+                          <div className="absolute left-[1.65rem] sm:left-[2.15rem] top-4 bottom-4 w-0.5 bg-gradient-to-b from-[#933DC9]/30 via-[#53118F]/20 to-transparent rounded-full" />
+
                           {msg.raw_deliberation.map((contribution, i) => (
-                            <div
-                              key={i}
-                              className="bg-[#0a0a0a] border border-[#333] rounded-lg overflow-hidden font-mono text-xs shadow-inner"
-                            >
-                              <div className="flex items-center justify-between px-4 py-2 bg-[#1a1a1a] border-b border-[#333]">
-                                <div className="flex items-center space-x-2">
-                                  <div className={`w-2 h-2 rounded-full bg-gradient-to-r ${agentColors[contribution.agent] || 'from-gray-500 to-gray-600'}`}></div>
-                                  <span className="text-[#FBFAEE]/90 font-bold">{contribution.agent}</span>
+                            <div key={i} className="relative flex items-start space-x-4 group">
+                              {/* Agent Icon */}
+                              <div className={`relative z-10 flex-shrink-0 w-8 h-8 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl flex items-center justify-center shadow-lg shadow-black/50 bg-gradient-to-br ${agentColors[contribution.agent] || 'from-gray-600 to-gray-800'} ring-4 ring-[#1a1a1a] group-hover:scale-110 transition-transform duration-300`}>
+                                <div className="text-white drop-shadow-md">
+                                  {agentIcons[contribution.agent] || <Terminal className="w-4 h-4 sm:w-5 sm:h-5" />}
                                 </div>
-                                <span className="text-[#FBFAEE]/40">
-                                  {new Date(contribution.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                                </span>
+
+                                {/* Pulse Effect for latest item */}
+                                {i === msg.raw_deliberation!.length - 1 && loading && (
+                                  <div className="absolute inset-0 rounded-xl sm:rounded-2xl bg-white/30 animate-ping" />
+                                )}
                               </div>
-                              <div className="p-4 overflow-x-auto">
-                                <pre className="text-[#FBFAEE]/70 whitespace-pre-wrap break-words leading-relaxed">
-                                  {cleanAnsi(contribution.output)}
-                                </pre>
+
+                              {/* Content Bubble */}
+                              <div className="flex-1 min-w-0 pt-1">
+                                <div className="flex items-baseline justify-between mb-2 pl-1">
+                                  <span className={`text-xs sm:text-sm font-bold uppercase tracking-wide ${agentColors[contribution.agent] ? 'bg-clip-text text-transparent bg-gradient-to-r ' + agentColors[contribution.agent] : 'text-[#FBFAEE]/70'}`}>
+                                    {contribution.agent}
+                                  </span>
+                                  <span className="text-[10px] text-[#FBFAEE]/20 font-mono tabular-nums">
+                                    {new Date(contribution.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                  </span>
+                                </div>
+
+                                <div className="bg-[#1a1a1a]/80 border border-white/5 rounded-2xl rounded-tl-none p-4 sm:p-5 shadow-xl backdrop-blur-md group-hover:border-white/10 transition-colors relative overflow-hidden">
+                                  {/* Subtle background gradient based on agent */}
+                                  <div className={`absolute inset-0 opacity-[0.03] bg-gradient-to-br ${agentColors[contribution.agent] || 'from-gray-500 to-gray-900'} pointer-events-none`} />
+
+                                  <div className="relative z-10">
+                                    <MarkdownRenderer
+                                      content={cleanAnsi(contribution.output)}
+                                      className="text-xs sm:text-sm text-[#FBFAEE]/80 leading-relaxed prose-p:my-1.5 prose-ul:my-1 prose-li:my-0.5 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
+                                    />
+                                  </div>
+                                </div>
                               </div>
                             </div>
                           ))}
@@ -493,14 +566,25 @@ export default function Chat({ githubUsername }: ChatProps) {
 
         {/* Loading indicator */}
         {loading && (
-          <div className="flex items-start space-x-3">
-            <div className="bg-[#242424] border border-[#242424]/60 px-6 py-4 rounded-2xl rounded-tl-none">
-              <div className="flex items-center space-x-3">
-                <Loader2 className="w-5 h-5 animate-spin text-[#933DC9]" /> {/* Orchid spinner */}
+          <div className="flex items-start space-x-3 animate-in fade-in duration-300">
+            <div className="bg-[#242424] border border-[#242424]/60 px-6 py-4 rounded-2xl rounded-tl-none relative overflow-hidden group shadow-lg shadow-[#933DC9]/5">
+              <div className="absolute inset-0 bg-gradient-to-r from-[#933DC9]/5 via-[#53118F]/10 to-[#933DC9]/5 animate-[shimmer_2s_infinite]" />
+              <div className="flex items-center space-x-4 relative z-10">
+                <div className="relative">
+                  <div className="absolute inset-0 bg-[#933DC9] blur-md opacity-40 animate-pulse" />
+                  <Brain className="w-6 h-6 text-[#C488F8] animate-bounce" />
+                </div>
                 <div>
-                  <p className="text-[#FBFAEE]/90 font-medium">Agents are deliberating...</p>
+                  <p className="text-[#FBFAEE]/90 font-medium flex items-center">
+                    The Council is Deliberating
+                    <span className="flex space-x-1 ml-2">
+                      <span className="w-1 h-1 bg-[#C488F8] rounded-full animate-bounce [animation-delay:-0.3s]" />
+                      <span className="w-1 h-1 bg-[#C488F8] rounded-full animate-bounce [animation-delay:-0.15s]" />
+                      <span className="w-1 h-1 bg-[#C488F8] rounded-full animate-bounce" />
+                    </span>
+                  </p>
                   <p className="text-xs text-[#FBFAEE]/60 mt-1">
-                    Analyst, Psychologist, Contrarian, and Strategist are debating your question
+                    Synthesizing perspectives from Analyst, Strategist, and Contrarian...
                   </p>
                 </div>
               </div>

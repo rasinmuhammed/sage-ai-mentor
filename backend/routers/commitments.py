@@ -7,7 +7,7 @@ import models
 from models import CheckInCreate, CheckInUpdate, CheckInResponse
 from database import get_user_db, get_system_db
 from services import sage_crew, gamification_service
-from cache import cached, invalidate_user_cache
+from services.cache import cached, invalidate_user_cache
 
 router = APIRouter()
 
@@ -241,8 +241,7 @@ async def get_pending_commitments(
         ]
     }
 
-from services import sage_crew, gamification_service
-from cache import cached, invalidate_user_cache
+
 
 # ... (existing code)
 

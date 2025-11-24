@@ -364,7 +364,7 @@ function DashboardContent({ githubUsername }: DashboardProps) {
                     onClick={() => setActiveTab(tab.id as TabType)}
                     className={`
                       relative px-4 py-2 rounded-full text-sm font-medium transition-all duration-300 flex items-center gap-2
-                      ${isActive ? 'text-white' : 'text-[#FBFAEE]/60 hover:text-[#FBFAEE] hover:bg-white/5'}
+                      ${isActive ? 'text-white' : 'text-[#FBFAEE]/60 hover:text-[#FBFAEE]'}
                     `}
                   >
                     {isActive && (
@@ -373,6 +373,9 @@ function DashboardContent({ githubUsername }: DashboardProps) {
                         className="absolute inset-0 bg-[#933DC9] rounded-full shadow-lg shadow-[#933DC9]/25"
                         transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
                       />
+                    )}
+                    {!isActive && (
+                      <div className="absolute inset-0 rounded-full hover:bg-white/5 transition-colors" />
                     )}
                     <span className="relative z-10 flex items-center gap-2">
                       <Icon className={`w-4 h-4 ${isActive ? 'text-white' : ''}`} />

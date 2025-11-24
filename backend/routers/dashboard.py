@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 import models
 from database import get_user_db, get_system_db
-from cache import get_cached_dashboard, cache_dashboard
+from services.cache import get_cached_dashboard, cache_dashboard
 
 router = APIRouter()
 

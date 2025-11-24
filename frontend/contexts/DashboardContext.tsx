@@ -183,15 +183,25 @@ export function DashboardProvider({ children, githubUsername }: { children: Reac
             return
         }
 
-        try {
-            const response = await axios.get(`${API_URL}/life-decisions/${githubUsername}`)
-            const sortedDecisions = response.data.sort((a: LifeDecision, b: LifeDecision) =>
-                new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-            );
-            setDecisions(sortedDecisions)
-            setLastDecisionsFetch(now)
-        } catch (err) {
-            console.error('Failed to load decisions:', err)
+        let retries = 3
+        while (retries > 0) {
+            try {
+                const response = await axios.get(`${API_URL}/life-decisions/${githubUsername}`)
+                const sortedDecisions = response.data.sort((a: LifeDecision, b: LifeDecision) =>
+                    new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+                );
+                setDecisions(sortedDecisions)
+                setLastDecisionsFetch(now)
+                return // Success
+            } catch (err) {
+                console.error(`Failed to load decisions (attempt ${4 - retries}):`, err)
+                retries--
+                if (retries === 0) {
+                    // console.error('Failed to load decisions after 3 attempts')
+                } else {
+                    await new Promise(resolve => setTimeout(resolve, 1000 * (4 - retries))) // Exponential backoff
+                }
+            }
         }
     }, [githubUsername, decisions.length, lastDecisionsFetch])
 

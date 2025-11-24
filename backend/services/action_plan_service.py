@@ -1,7 +1,7 @@
 # backend/action_plan_service.py
 
 from crewai import Task, Crew, Process
-from agents import strategist, analyst, psychologist
+from .agents import strategist, analyst, psychologist
 from typing import Dict, List
 import json
 from datetime import datetime, timedelta
