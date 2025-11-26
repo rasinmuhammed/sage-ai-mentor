@@ -12,6 +12,7 @@ class User(SystemBase):
     email = Column(String(255), unique=True, index=True, nullable=True)
     full_name = Column(String(255), nullable=True)
     avatar_url = Column(String(500), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
     
     # Onboarding Status
     is_onboarded = Column(Boolean, default=False)

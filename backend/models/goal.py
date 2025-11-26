@@ -12,6 +12,7 @@ class Goal(UserBase):
     title = Column(String(500))
     description = Column(Text)
     goal_type = Column(String(50)) # 'outcome', 'process', 'identity'
+    priority = Column(String(50), default="medium")
     
     # Status
     status = Column(String(50), default="active") # active, completed, abandoned
@@ -100,6 +101,7 @@ class ActionPlan(UserBase):
     
     title = Column(String(500))
     description = Column(Text)
+    focus_area = Column(String(255), nullable=True)
     
     start_date = Column(DateTime)
     end_date = Column(DateTime)

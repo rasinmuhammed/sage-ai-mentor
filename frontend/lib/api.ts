@@ -1,5 +1,5 @@
 import axios, { AxiosError, AxiosRequestConfig } from 'axios'
-import { toast } from '@/components/ErrorBoundary'
+import { toast } from '@/components/shared/ErrorBoundary'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 

@@ -2,7 +2,7 @@
 
 import { useUser } from '@clerk/nextjs'
 import { useState, useEffect } from 'react'
-import Dashboard from '../components/Dashboard'
+import Dashboard from '@/components/features/dashboard/Dashboard'
 import Onboarding from '../components/features/onboarding/Onboarding'
 import LandingPage from '../components/features/onboarding/LandingPage'
 import { Loader2 } from 'lucide-react'

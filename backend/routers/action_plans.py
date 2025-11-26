@@ -26,13 +26,13 @@ async def create_action_plan(
     # Check for existing active plan
     result = await db.execute(select(models.ActionPlan).filter(
         models.ActionPlan.user_id == user.id,
-        models.ActionPlan.status == "active"
+        models.ActionPlan.active == True
     ))
     existing_plan = result.scalars().first()
     
     if existing_plan:
         # Archive existing plan
-        existing_plan.status = "archived"
+        existing_plan.active = False
         await db.commit()
 
     # Get user context (GitHub stats)
@@ -62,7 +62,7 @@ async def create_action_plan(
             description=plan_data.description,
             plan_type=plan_data.plan_type,
             focus_area=plan_data.focus_area,
-            status="active",
+            active=True,
             start_date=datetime.utcnow(),
             end_date=datetime.utcnow() + timedelta(days=ai_plan['total_days']),
             ai_analysis=ai_plan['analysis'],
@@ -85,7 +85,7 @@ async def create_action_plan(
                 task_type=task_data['task_type'],
                 difficulty=task_data['difficulty'],
                 estimated_time=task_data['estimated_time'],
-                status="pending"
+                completed=False
             )
             db.add(daily_task)
         
@@ -175,7 +175,7 @@ async def get_dashboard_daily_tasks(
     # Find active plan
     result = await db.execute(select(models.ActionPlan).filter(
         models.ActionPlan.user_id == user.id,
-        models.ActionPlan.status == "active"
+        models.ActionPlan.active == True
     ))
     active_plan = result.scalars().first()
     
@@ -210,7 +210,7 @@ async def complete_daily_task(
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
         
-    task.status = "completed"
+    task.completed = True
     task.completed_at = datetime.utcnow()
     task.actual_time_spent = update_data.actual_time_spent
     task.difficulty_rating = update_data.difficulty_rating
@@ -230,7 +230,7 @@ async def complete_daily_task(
     
     result = await db.execute(select(func.count(models.DailyTask.id)).filter(
         models.DailyTask.action_plan_id == plan_id,
-        models.DailyTask.status == "completed"
+        models.DailyTask.completed == True
     ))
     completed_tasks = result.scalar()
     
@@ -417,7 +417,7 @@ async def update_daily_task(
     if task_update.title: task.title = task_update.title
     if task_update.description: task.description = task_update.description
     if task_update.estimated_time: task.estimated_time = task_update.estimated_time
-    if task_update.status: task.status = task_update.status
+    # if task_update.status: task.status = task_update.status # DailyTask has no status field
     
     if task_update.notes: task.notes = task_update.notes
     if task_update.difficulty_rating: task.difficulty_rating = task_update.difficulty_rating

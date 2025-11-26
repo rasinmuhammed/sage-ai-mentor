@@ -44,7 +44,8 @@ async def get_dashboard(
     dashboard_data = {
         "user": {
             "username": user.github_username,
-            "member_since": user.created_at.strftime("%Y-%m-%d")
+            "full_name": user.full_name,
+            "member_since": user.created_at.strftime("%Y-%m-%d") if user.created_at else "N/A"
         },
         "github": {
             "total_repos": github_analysis.total_repos if github_analysis else 0,

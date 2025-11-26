@@ -30,44 +30,44 @@ import {
   Code
 } from 'lucide-react'
 import dynamic from 'next/dynamic'
-import CheckInModal from './features/checkin/CheckInModal'
-import PomodoroTimer from './features/productivity/PomodoroTimer'
-import NotificationBell from './features/notifications/NotificationBell'
-import AIInsightsFeed from './features/analytics/AIInsightsFeed'
-import QuickActionPills from './shared/QuickActionPills'
-import InteractionHistory from './features/chat/InteractionHistory'
+import CheckInModal from '@/components/features/checkin/CheckInModal'
+import PomodoroTimer from '@/components/features/productivity/PomodoroTimer'
+import NotificationBell from '@/components/features/notifications/NotificationBell'
+import AIInsightsFeed from '@/components/features/analytics/AIInsightsFeed'
+import QuickActionPills from '@/components/shared/QuickActionPills'
+import InteractionHistory from '@/components/features/chat/InteractionHistory'
 import { updateOnboardingProgress } from '@/lib/onboardingStorage'
-import OnboardingCelebration from './features/onboarding/OnboardingCelebration'
-import GradientLayout from './ui/GradientLayout'
+import OnboardingCelebration from '@/components/features/onboarding/OnboardingCelebration'
+import GradientLayout from '@/components/ui/GradientLayout'
 import { DashboardProvider, useDashboard } from '@/contexts/DashboardContext'
-import CommitmentTracker from './features/analytics/CommitmentTracker'
-import CommitmentCalendar from './features/analytics/CommitmentCalendar'
-import CommandPalette from './shared/CommandPalette'
-import MorningStandup from './features/productivity/MorningStandup'
-import FlowMode from './features/productivity/FlowMode'
-import TwoMinuteTimer from './features/productivity/TwoMinuteTimer'
-import UnifiedDashboard from './features/analytics/UnifiedDashboard'
+import CommitmentTracker from '@/components/features/analytics/CommitmentTracker'
+import CommitmentCalendar from '@/components/features/analytics/CommitmentCalendar'
+import CommandPalette from '@/components/shared/CommandPalette'
+import MorningStandup from '@/components/features/productivity/MorningStandup'
+import FlowMode from '@/components/features/productivity/FlowMode'
+import TwoMinuteTimer from '@/components/features/productivity/TwoMinuteTimer'
+import UnifiedDashboard from '@/components/features/analytics/UnifiedDashboard'
 
 // Lazy load heavy components
-const Chat = dynamic(() => import('./features/chat/Chat'), {
+const Chat = dynamic(() => import('@/components/features/chat/Chat'), {
   loading: () => <div className="h-full flex items-center justify-center"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#933DC9]" /></div>
 })
-const LifeDecisions = dynamic(() => import('./features/life-decisions/LifeDecisions'), {
+const LifeDecisions = dynamic(() => import('@/components/features/life-decisions/LifeDecisions'), {
   loading: () => <div className="h-full flex items-center justify-center"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#933DC9]" /></div>
 })
-const Goals = dynamic(() => import('./features/goals/Goals'), {
+const Goals = dynamic(() => import('@/components/features/goals/Goals'), {
   loading: () => <div className="h-full flex items-center justify-center"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#933DC9]" /></div>
 })
-const Notifications = dynamic(() => import('./features/notifications/Notifications'), {
+const Notifications = dynamic(() => import('@/components/features/notifications/Notifications'), {
   loading: () => <div className="h-full flex items-center justify-center"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#933DC9]" /></div>
 })
-const SettingsComponent = dynamic(() => import('./features/settings/Settings'), {
+const SettingsComponent = dynamic(() => import('@/components/features/settings/Settings'), {
   loading: () => <div className="h-full flex items-center justify-center"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#933DC9]" /></div>
 })
-const Analytics = dynamic(() => import('./features/analytics/Analytics'), {
+const Analytics = dynamic(() => import('@/components/features/analytics/Analytics'), {
   loading: () => <div className="h-full flex items-center justify-center"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#933DC9]" /></div>
 })
-const LearningHub = dynamic(() => import('./features/learning/LearningHub'), {
+const LearningHub = dynamic(() => import('@/components/features/learning/LearningHub'), {
   loading: () => <div className="h-full flex items-center justify-center"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#933DC9]" /></div>
 })
 
@@ -409,7 +409,7 @@ function DashboardContent({ githubUsername }: DashboardProps) {
           <div className="h-full overflow-y-auto p-4 sm:p-8 space-y-8">
             <header className="space-y-2">
               <h1 className="text-3xl font-bold tracking-tight">
-                Good {new Date().getHours() < 12 ? 'Morning' : new Date().getHours() < 18 ? 'Afternoon' : 'Evening'}, {githubUsername}
+                Good {new Date().getHours() < 12 ? 'Morning' : new Date().getHours() < 18 ? 'Afternoon' : 'Evening'}, {data?.user?.full_name || githubUsername}
               </h1>
               <p className="text-[#FBFAEE]/60">Here's what's happening in your workspace today.</p>
             </header>
@@ -509,25 +509,29 @@ function DashboardContent({ githubUsername }: DashboardProps) {
         </div>
       </main>
 
-      {showCheckin && (
-        <CheckInModal
-          githubUsername={githubUsername}
-          onClose={() => setShowCheckin(false)}
-          onComplete={() => {
-            setShowCheckin(false)
-            refresh()
-            checkOnboardingStatus()
-          }}
-          suggestions={suggestions}
-        />
-      )}
+      {
+        showCheckin && (
+          <CheckInModal
+            githubUsername={githubUsername}
+            onClose={() => setShowCheckin(false)}
+            onComplete={() => {
+              setShowCheckin(false)
+              refresh()
+              checkOnboardingStatus()
+            }}
+            suggestions={suggestions}
+          />
+        )
+      }
 
-      {showTwoMinuteTimer && (
-        <TwoMinuteTimer
-          onClose={() => setShowTwoMinuteTimer(false)}
-        />
-      )}
-    </GradientLayout>
+      {
+        showTwoMinuteTimer && (
+          <TwoMinuteTimer
+            onClose={() => setShowTwoMinuteTimer(false)}
+          />
+        )
+      }
+    </GradientLayout >
   )
 }
 

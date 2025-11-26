@@ -9,10 +9,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # --- Configuration Helpers ---
+# --- Configuration Helpers ---
 def fix_db_url(url: str) -> str:
     """Ensure URL is compatible with SQLAlchemy Async"""
     if url:
-        # Replace postgres:// or postgresql:// with postgresql+asyncpg://
         if url.startswith("postgres://"):
             return url.replace("postgres://", "postgresql+asyncpg://", 1)
         elif url.startswith("postgresql://"):
@@ -21,22 +21,59 @@ def fix_db_url(url: str) -> str:
             return url.replace("sqlite://", "sqlite+aiosqlite://", 1)
     return url
 
+def create_configured_async_engine(database_url: str) -> AsyncEngine:
+    """
+    Creates an async engine with proper configuration for both SQLite and Postgres (Neon).
+    Handles stripping unsupported params (sslmode) and adding required SSL settings.
+    """
+    if not database_url:
+        raise ValueError("Database URL is required")
+    
+    clean_url = fix_db_url(database_url)
+    
+    # Fix for asyncpg: remove sslmode and channel_binding from URL
+    if "?" in clean_url:
+        base, query = clean_url.split("?", 1)
+        params = query.split("&")
+        # Filter out sslmode and channel_binding
+        params = [p for p in params if not p.startswith("sslmode=") and not p.startswith("channel_binding=")]
+        if params:
+            clean_url = f"{base}?{'&'.join(params)}"
+        else:
+            clean_url = base
+
+    connect_args = {}
+    
+    # SQLite specific args
+    if "sqlite" in clean_url:
+        connect_args = {"check_same_thread": False}
+        
+    # Postgres (Neon) specific args
+    if "postgresql" in clean_url:
+        connect_args = {
+            "server_settings": {
+                "jit": "off" # Optimization for asyncpg
+            },
+            "ssl": "require"
+        }
+
+    return create_async_engine(
+        clean_url,
+        poolclass=AsyncAdaptedQueuePool,
+        pool_size=20,
+        max_overflow=30,
+        pool_pre_ping=True,
+        pool_recycle=300,
+        connect_args=connect_args
+    )
+
 # --- System Database (Internal) ---
-# For SQLite, we use aiosqlite driver
 from config import settings
+from models.base import SystemBase, UserBase
 
-# --- System Database (Internal) ---
-# For SQLite, we use aiosqlite driver
-SYSTEM_DATABASE_URL = fix_db_url(settings.DATABASE_URL)
+# Create system engine using the shared helper
+system_engine = create_configured_async_engine(settings.DATABASE_URL)
 
-if not SYSTEM_DATABASE_URL.startswith("sqlite"):
-     # Fallback logic if needed, but for now assuming sqlite+aiosqlite
-     pass
-
-system_engine = create_async_engine(
-    SYSTEM_DATABASE_URL,
-    connect_args={"check_same_thread": False} if "sqlite" in SYSTEM_DATABASE_URL else {}
-)
 SystemSessionLocal = sessionmaker(
     bind=system_engine, 
     class_=AsyncSession, 
@@ -44,7 +81,7 @@ SystemSessionLocal = sessionmaker(
     autocommit=False, 
     autoflush=False
 )
-SystemBase = declarative_base()
+# SystemBase is now imported
 
 async def get_system_db():
     async with SystemSessionLocal() as db:
@@ -59,56 +96,22 @@ async def init_system_db():
     print("✓ System database initialized (Async)")
 
 # --- User Database (Neon/Postgres) ---
-UserBase = declarative_base()
+# UserBase is now imported
 
 # Engine cache to prevent creating new pools for every request
 _engine_cache = {}
 
 def get_user_db_engine(database_url: str) -> AsyncEngine:
     """Create or retrieve a dynamic async engine for the user's database"""
-    if not database_url:
-        raise ValueError("Database URL is required")
+    # Return cached engine if available (using original URL as key is fine, or cleaned)
+    # We'll use the original URL as the cache key for simplicity
+    if database_url in _engine_cache:
+        return _engine_cache[database_url]
     
-    clean_url = fix_db_url(database_url)
-    
-    # Return cached engine if available
-    if clean_url in _engine_cache:
-        return _engine_cache[clean_url]
-    
-    # Fix for asyncpg: remove sslmode and channel_binding from URL and pass ssl='require' in connect_args
-    # asyncpg does not support 'sslmode' or 'channel_binding' in the connection string/kwargs
-    if "?" in clean_url:
-        base, query = clean_url.split("?", 1)
-        params = query.split("&")
-        # Filter out sslmode and channel_binding
-        params = [p for p in params if not p.startswith("sslmode=") and not p.startswith("channel_binding=")]
-        if params:
-            clean_url = f"{base}?{'&'.join(params)}"
-        else:
-            clean_url = base
-
-    # CRITICAL: Neon requires SSL.
-    connect_args = {}
-    if "postgresql" in clean_url:
-        connect_args = {
-            "server_settings": {
-                "jit": "off" # Optimization for asyncpg
-            },
-            "ssl": "require"
-        }
-
-    engine = create_async_engine(
-        clean_url,
-        poolclass=AsyncAdaptedQueuePool,
-        pool_size=20,
-        max_overflow=30,
-        pool_pre_ping=True,
-        pool_recycle=300,
-        connect_args=connect_args
-    )
+    engine = create_configured_async_engine(database_url)
     
     # Cache the engine
-    _engine_cache[clean_url] = engine
+    _engine_cache[database_url] = engine
     return engine
 
 # --- Initialization Helpers ---

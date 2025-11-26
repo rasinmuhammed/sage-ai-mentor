@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { MOOD_OPTIONS, COMMITMENT_TEMPLATES, TAILWIND_CLASSES } from '@/lib/constants'
-import Button from '@/components/common/Button'
+import { Button } from '@/components/ui/Button'
 import { Zap, Target, Brain } from 'lucide-react'
 
 interface CheckInFormProps {
@@ -101,11 +101,10 @@ export default function CheckInForm({ onSubmit, isLoading }: CheckInFormProps) {
               key={mood.value}
               type="button"
               onClick={() => setFormData({ ...formData, mood: mood.value })}
-              className={`p-3 rounded-xl text-center transition border-2 ${
-                formData.mood === mood.value
+              className={`p-3 rounded-xl text-center transition border-2 ${formData.mood === mood.value
                   ? 'bg-gradient-to-br from-[#933DC9]/30 to-[#53118F]/30 border-[#933DC9]'
                   : 'bg-[#000000]/30 border-[#242424]/60 hover:border-[#933DC9]/50'
-              }`}
+                }`}
             >
               <div className="text-2xl mb-1">{mood.emoji}</div>
               <div className="text-xs">{mood.label}</div>

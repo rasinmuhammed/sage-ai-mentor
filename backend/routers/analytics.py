@@ -51,7 +51,7 @@ async def get_analytics(
     
     tasks_result = await db.execute(
         select(func.date(DailyTask.completed_at), func.count(DailyTask.id))
-        .filter(DailyTask.status == 'completed')
+        .filter(DailyTask.completed == True)
         .filter(DailyTask.completed_at >= thirty_days_ago)
         .group_by(func.date(DailyTask.completed_at))
     )

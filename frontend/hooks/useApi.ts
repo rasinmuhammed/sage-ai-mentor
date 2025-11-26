@@ -1,6 +1,6 @@
 import axios, { AxiosError } from 'axios'
 import { useState, useCallback } from 'react'
-import { toast } from '@/components/ErrorBoundary'
+import { toast } from '@/components/shared/ErrorBoundary'
 
 export function useApi<T>(
   url: string,
